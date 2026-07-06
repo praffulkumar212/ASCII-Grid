@@ -1,0 +1,99 @@
+# FIXES.md — Review findings after Phase 2
+
+Independent code review + functional test of `src/ascii-engine.js` (v0.2.0).
+Fix items 1–3 before starting Phase 3 (presets build directly on these code paths).
+Delete this file once everything is addressed.
+
+## 1. BUG — `update({density})` is silently ignored  [high, test-confirmed]
+
+`update()` merges `newOpts` over the previous **normalized** opts, which already
+contain a computed `cols`. In `_normalizeOpts`, `raw.cols` wins over `density`,
+so a new density can never change the column count. Net effect: the density
+slider in `examples/basic.html` does nothing after the first render.
+
+Repro: init with `density: 62` (cols 164) → `update({ density: 100 })` →
+`_opts.cols` is still 164, expected 240.
+
+Fix direction: when the incoming opts contain `density` but not `cols`, drop the
+stale `cols` before normalizing (or track whether cols was user-set vs derived).
+
+## 2. BUG — stale `cols` captured by ResizeObserver  [high]
+
+`_setupResizeObserver(cols)` early-returns if `this._ro` exists, and the debounced
+callback closes over the `cols` from the **first** render. After any structural
+update (density/cols change), window resizes re-fit with the old column count →
+wrong font-size.
+
+Fix direction: have the callback read `this._grid.cols` at call time; don't pass
+cols into the closure.
+
+## 3. DESIGN — hardcoded `GLYPH_ASPECT = 2.0` squashes output  [high]
+
+Rendering uses `line-height: 1em`, and a monospace glyph is ~0.6em wide, so the
+real cell aspect is ≈ 1.67, not 2.0. Sampling with 2.0 produces ~17% vertically
+squashed art.
+
+Fix direction: measure the actual ratio at runtime — extend `measureCharWidth()`
+to also measure line height (one hidden `<span>` probe gives both), and use
+`measuredLineHeight / measuredCharWidth` as the default `glyphAspect`.
+Keep the `glyphAspect` option as an override. Note: measured aspect feeds the
+cache key indirectly via rows — recompute rows when it changes.
+
+## 4. DESIGN — braille charset is not a brightness ramp  [medium]
+
+`CHARSETS.braille` lists glyphs in codepoint order, which is not dot-count order
+(e.g. ⠇ = 3 dots precedes ⠈ = 1 dot). As a ramp it's perceptually wrong → noisy
+output.
+
+Two-part fix:
+- Short term: sort the ramp by dot count (popcount of the low 8 bits of
+  `codepoint - 0x2800`).
+- Real fix (per README §3, "Braille dot-matrix (highest fidelity)"): braille
+  should be a distinct **render technique**, not a ramp — each glyph encodes a
+  2×4 subpixel block: threshold 8 samples per cell, set dots via
+  `0x2800 + bitmask`. Grid sampling for braille mode needs 2×4 sub-samples per
+  cell. OK to defer to its own task, but don't ship the unsorted ramp.
+
+## 5. GAP — `edgeBlend` is a silent no-op  [medium]
+
+`edgeBlend` is accepted, documented as structural, and part of the cache key,
+but no Sobel pass exists. Either implement Sobel edge detection (README §2 step
+3: blendable 0–100% with brightness mapping) or throw/warn until implemented —
+silent acceptance is misleading, and presets in Phase 3 (Blueprint, Line-Art)
+depend on it.
+
+## 6. MINOR — dither runs on pre-contrast values
+
+Dithering quantizes raw luminance, but `mapChar` then applies gamma/contrast,
+warping the quantized levels so error diffusion no longer lands on charset
+boundaries. Apply gamma/contrast to the brightness copy **before** quantization
+(then `mapChar` should skip them when dither is active).
+
+## 7. MINOR — source+themeBlend colors don't track theme toggles
+
+In `colorMode: 'source'` with `themeBlend > 0`, the theme color is resolved once
+and baked into inline `rgb()` styles, so a light/dark toggle doesn't update the
+art until a repaint (plan §5 promises automatic flipping). Options:
+`color-mix(in srgb, rgb(...) X%, var(--ascii-fg))` as the inline color (CSS does
+the blend live), or observe theme changes and repaint (cheap — grid is cached).
+Pure `theme` mode is already correct.
+
+## 8. NOTES — no action needed now
+
+- Grid cache Map is unbounded; fine at current sizes, revisit if playground
+  churns many images (LRU cap ~20).
+- `URL.revokeObjectURL` immediately after `new Worker(url)` is spec-safe but has
+  been flaky in old Safari; revoke on first successful message if paranoid.
+- Cross-origin images without CORS headers will taint the canvas and fail with a
+  console error only — playground (Phase 4) should surface this to the user.
+- `examples/basic.html` sliders use `change` events; switch to `input` (debounced)
+  for live-drag feedback in the real playground.
+
+## Test harness
+
+Functional checks used for this review (11 checks: grid dims, ramp mapping,
+data-attrs, a11y, dither purity/determinism, density-update repro) live in
+`test/engine.test.js` — a Node DOM-shim harness, no dependencies. Run with
+`node test/engine.test.js`. Currently 10/11 pass; the failing check is bug #1
+and should pass once fixed. Extend it as you fix items above (a stale-closure
+check for #2, a measured-aspect check for #3, dot-count monotonicity for #4).
