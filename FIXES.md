@@ -1,10 +1,13 @@
 # FIXES.md — Review findings after Phase 2
 
 Independent code review + functional test of `src/ascii-engine.js` (v0.2.0).
-Fix items 1–3 before starting Phase 3 (presets build directly on these code paths).
-Delete this file once everything is addressed.
 
-## 1. BUG — `update({density})` is silently ignored  [high, test-confirmed]
+**STATUS (v0.2.1): items 1–6 FIXED and covered by tests (19/19 passing —
+`node test/engine.test.js`). Item 7 still open (deferred; see below). Braille
+dot-matrix render mode (#4, real fix) deferred to its own task. Phase 3 is
+unblocked.**
+
+## 1. BUG — `update({density})` is silently ignored  [FIXED v0.2.1]
 
 `update()` merges `newOpts` over the previous **normalized** opts, which already
 contain a computed `cols`. In `_normalizeOpts`, `raw.cols` wins over `density`,
@@ -17,7 +20,7 @@ Repro: init with `density: 62` (cols 164) → `update({ density: 100 })` →
 Fix direction: when the incoming opts contain `density` but not `cols`, drop the
 stale `cols` before normalizing (or track whether cols was user-set vs derived).
 
-## 2. BUG — stale `cols` captured by ResizeObserver  [high]
+## 2. BUG — stale `cols` captured by ResizeObserver  [FIXED v0.2.1]
 
 `_setupResizeObserver(cols)` early-returns if `this._ro` exists, and the debounced
 callback closes over the `cols` from the **first** render. After any structural
@@ -27,7 +30,7 @@ wrong font-size.
 Fix direction: have the callback read `this._grid.cols` at call time; don't pass
 cols into the closure.
 
-## 3. DESIGN — hardcoded `GLYPH_ASPECT = 2.0` squashes output  [high]
+## 3. DESIGN — hardcoded `GLYPH_ASPECT = 2.0` squashes output  [FIXED v0.2.1 — measured at runtime, glyphAspect now part of cache key]
 
 Rendering uses `line-height: 1em`, and a monospace glyph is ~0.6em wide, so the
 real cell aspect is ≈ 1.67, not 2.0. Sampling with 2.0 produces ~17% vertically
@@ -39,7 +42,7 @@ to also measure line height (one hidden `<span>` probe gives both), and use
 Keep the `glyphAspect` option as an override. Note: measured aspect feeds the
 cache key indirectly via rows — recompute rows when it changes.
 
-## 4. DESIGN — braille charset is not a brightness ramp  [medium]
+## 4. DESIGN — braille charset is not a brightness ramp  [FIXED v0.2.1 — dot-count-sorted 256-level ramp; true dot-matrix mode still TODO]
 
 `CHARSETS.braille` lists glyphs in codepoint order, which is not dot-count order
 (e.g. ⠇ = 3 dots precedes ⠈ = 1 dot). As a ramp it's perceptually wrong → noisy
@@ -54,7 +57,7 @@ Two-part fix:
   `0x2800 + bitmask`. Grid sampling for braille mode needs 2×4 sub-samples per
   cell. OK to defer to its own task, but don't ship the unsorted ramp.
 
-## 5. GAP — `edgeBlend` is a silent no-op  [medium]
+## 5. GAP — `edgeBlend` is a silent no-op  [FIXED v0.2.1 — Sobel implemented, accepts 0–1 or percent]
 
 `edgeBlend` is accepted, documented as structural, and part of the cache key,
 but no Sobel pass exists. Either implement Sobel edge detection (README §2 step
@@ -62,14 +65,14 @@ but no Sobel pass exists. Either implement Sobel edge detection (README §2 step
 silent acceptance is misleading, and presets in Phase 3 (Blueprint, Line-Art)
 depend on it.
 
-## 6. MINOR — dither runs on pre-contrast values
+## 6. MINOR — dither runs on pre-contrast values  [FIXED v0.2.1 — toneAndDither applies gamma/contrast first, mapChar runs neutral when dithering]
 
 Dithering quantizes raw luminance, but `mapChar` then applies gamma/contrast,
 warping the quantized levels so error diffusion no longer lands on charset
 boundaries. Apply gamma/contrast to the brightness copy **before** quantization
 (then `mapChar` should skip them when dither is active).
 
-## 7. MINOR — source+themeBlend colors don't track theme toggles
+## 7. MINOR — source+themeBlend colors don't track theme toggles  [OPEN — good Phase 3/5 candidate: color-mix() or theme-change repaint]
 
 In `colorMode: 'source'` with `themeBlend > 0`, the theme color is resolved once
 and baked into inline `rgb()` styles, so a light/dark toggle doesn't update the

@@ -1,7 +1,9 @@
 /*!
- * ascii-engine.js — v0.2.0 (Phase 2)
+ * ascii-engine.js — v0.2.1 (Phase 2 + review fixes)
  * Phase 1: image → brightness grid → dom/pre render, fitMode, caching, a11y
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
+ * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
+ *         dot-count-ordered braille, Sobel edge blend, tone-before-dither
  */
 (function () {
   'use strict';
@@ -9,11 +11,22 @@
   // ─── Character sets ────────────────────────────────────────────────────────
   // Ordered light → dark (space = brightest, last char = darkest).
 
+  function popcount(n) { let c = 0; while (n) { n &= n - 1; c++; } return c; }
+
+  // Braille ramp ordered by dot count (perceptual density), not codepoint —
+  // FIXES.md #4. Full 8-dot range U+2801–U+28FF, stable-sorted so output is
+  // deterministic. Note: true braille dot-matrix rendering (2×4 subpixels per
+  // glyph) is a separate technique, tracked for a later phase.
+  const BRAILLE_RAMP = ' ' + Array.from({ length: 0xFF }, (_, i) => 0x2801 + i)
+    .sort((a, b) => popcount(a - 0x2800) - popcount(b - 0x2800) || a - b)
+    .map((cp) => String.fromCharCode(cp))
+    .join('');
+
   const CHARSETS = {
     classic:  ' .:-=+*#%@',
     extended: " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
     blocks:   ' ░▒▓█',
-    braille:  ' ⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿',
+    braille:  BRAILLE_RAMP,
   };
 
   const GLYPH_ASPECT = 2.0;
@@ -92,13 +105,13 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 `;
 
   // ─── Cache ─────────────────────────────────────────────────────────────────
-  // Key: src|cols|edgeBlend
+  // Key: src|cols|edgeBlend|glyphAspect (aspect affects row count — FIXES.md #3)
   // Dithering, color mode, saturation are render-time — they never invalidate the grid.
 
   const _gridCache = new Map();
 
-  function cacheKey(src, cols, edgeBlend) {
-    return src + '|' + cols + '|' + (+edgeBlend).toFixed(2);
+  function cacheKey(src, cols, edgeBlend, glyphAspect) {
+    return src + '|' + cols + '|' + (+edgeBlend).toFixed(2) + '|' + (+glyphAspect).toFixed(3);
   }
 
   // ─── Core utilities ────────────────────────────────────────────────────────
@@ -116,11 +129,27 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       ? charset : CHARSETS.classic);
   }
 
-  function mapChar(rawBrightness, charset, contrastExp, gamma) {
+  // Gamma + contrast tone curve, separated from mapChar so dithering can run on
+  // post-tone values (FIXES.md #6) — error diffusion must land on charset levels.
+  function toneValue(rawBrightness, contrastExp, gamma) {
     let b = gamma !== 1.0 ? Math.pow(Math.max(0, rawBrightness), 1.0 / gamma) : rawBrightness;
-    b = Math.pow(Math.max(0, Math.min(1, b)), contrastExp);
+    return Math.pow(Math.max(0, Math.min(1, b)), contrastExp);
+  }
+
+  function mapChar(rawBrightness, charset, contrastExp, gamma) {
+    const b = toneValue(rawBrightness, contrastExp, gamma);
     const idx = Math.round((1 - b) * (charset.length - 1));
     return charset[Math.max(0, Math.min(charset.length - 1, idx))];
+  }
+
+  // Applies tone curve then dithers — returns a new array, cache untouched.
+  function toneAndDither(brightness, rows, cols, levels, opts) {
+    const exp   = contrastExponent(opts.contrast);
+    const toned = new Float32Array(brightness.length);
+    for (let i = 0; i < brightness.length; i++) toned[i] = toneValue(brightness[i], exp, opts.gamma);
+    return opts.ditheringMode === 'bayer'
+      ? applyDitherBayer(toned, rows, cols, levels, opts.dither)
+      : applyDitherFS   (toned, rows, cols, levels, opts.dither);
   }
 
   function loadImage(src) {
@@ -155,20 +184,35 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     return function () { clearTimeout(t); t = setTimeout(fn, ms); };
   }
 
-  let _charWidthCache = null;
-  function measureCharWidth() {
-    if (_charWidthCache !== null) return _charWidthCache;
+  let _glyphMetricsCache = null;
+  function measureGlyphMetrics() {
+    if (_glyphMetricsCache) return _glyphMetricsCache;
     const span = document.createElement('span');
     Object.assign(span.style, {
       position: 'absolute', top: '-9999px', left: '-9999px',
       visibility: 'hidden', fontFamily: 'monospace',
-      fontSize: '100px', whiteSpace: 'pre',
+      fontSize: '100px', whiteSpace: 'pre', lineHeight: '1em',
     });
     span.textContent = '0';
     document.body.appendChild(span);
-    _charWidthCache = span.offsetWidth;
+    _glyphMetricsCache = { width: span.offsetWidth, height: span.offsetHeight };
     document.body.removeChild(span);
-    return _charWidthCache;
+    return _glyphMetricsCache;
+  }
+
+  function measureCharWidth() { return measureGlyphMetrics().width; }
+
+  // Real rendered cell aspect (line-height / char width) — FIXES.md #3.
+  // Hardcoded 2.0 squashed output ~17%; typical monospace is ≈1.67.
+  function measureGlyphAspect() {
+    try {
+      const m = measureGlyphMetrics();
+      if (!m.width || !m.height) return GLYPH_ASPECT;
+      const a = m.height / m.width;
+      return (a > 0.5 && a < 4) ? a : GLYPH_ASPECT;
+    } catch (_) {
+      return GLYPH_ASPECT;
+    }
   }
 
   function prefersReducedMotion() {
@@ -254,6 +298,35 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
   function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
+  // ─── Edge detection (Sobel) — FIXES.md #5 ──────────────────────────────────
+  // Blends the brightness grid toward inverted edge magnitude: edges → dark
+  // glyphs, flat areas → space. amount 0..1 (README §9: Sobel layer opacity).
+
+  function normalizeEdgeBlend(e) {
+    e = +e || 0;
+    if (e > 1) e = e / 100; // accept percentages defensively
+    return clamp01(e);
+  }
+
+  function applyEdgeBlend(brightness, rows, cols, amount) {
+    const out = new Float32Array(brightness.length);
+    const get = (r, c) => brightness[
+      Math.max(0, Math.min(rows - 1, r)) * cols + Math.max(0, Math.min(cols - 1, c))
+    ];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const gx = (get(r-1,c+1) + 2*get(r,c+1) + get(r+1,c+1))
+                 - (get(r-1,c-1) + 2*get(r,c-1) + get(r+1,c-1));
+        const gy = (get(r+1,c-1) + 2*get(r+1,c) + get(r+1,c+1))
+                 - (get(r-1,c-1) + 2*get(r-1,c) + get(r-1,c+1));
+        // Max |gx| is 4 on a 0-1 grid; ×1.5 boost so single-step edges read clearly.
+        const mag = clamp01(Math.sqrt(gx*gx + gy*gy) / 4 * 1.5);
+        out[r*cols + c] = (1 - amount) * brightness[r*cols + c] + amount * (1 - mag);
+      }
+    }
+    return out;
+  }
+
   // ─── Color utilities ───────────────────────────────────────────────────────
 
   function rgbToHsl(r, g, b) {
@@ -338,7 +411,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
     update(newOpts) {
       const prev = this._opts;
-      this._opts = this._normalizeOpts(Object.assign({}, prev, newOpts));
+      const merged = Object.assign({}, prev, newOpts);
+      // FIXES.md #1: prev opts carry a *computed* cols, which would always win
+      // over an incoming density. If density changes without an explicit cols,
+      // drop the stale cols so density can take effect.
+      if (newOpts && newOpts.density != null && newOpts.cols == null) delete merged.cols;
+      this._opts = this._normalizeOpts(merged);
       const o = this._opts;
 
       // Structural params: those that require re-sampling the image.
@@ -376,7 +454,9 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         fitMode:      raw.fitMode     || 'width',
         contrast:     raw.contrast    != null ? Number(raw.contrast)    : 50,
         gamma:        raw.gamma       != null ? Number(raw.gamma)       : 1.0,
-        glyphAspect:  raw.glyphAspect != null ? Number(raw.glyphAspect) : GLYPH_ASPECT,
+        glyphAspect:  raw.glyphAspect != null
+          ? Number(raw.glyphAspect)
+          : (typeof document !== 'undefined' && document.body ? measureGlyphAspect() : GLYPH_ASPECT),
         alt:          raw.alt || raw.label || '',
         // Phase 2 — color
         colorMode:    raw.colorMode   || 'theme',     // 'theme' | 'source'
@@ -401,7 +481,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       if (!src) throw new Error('[ascii-engine] No image source provided');
       if (!opts.alt) console.warn('[ascii-engine] No alt/label — add the "alt" option for accessibility.', this._el);
 
-      const key = cacheKey(src, opts.cols, opts.edgeBlend);
+      const edge = normalizeEdgeBlend(opts.edgeBlend);
+      const key  = cacheKey(src, opts.cols, edge, opts.glyphAspect);
       let grid;
       if (_gridCache.has(key)) {
         grid = _gridCache.get(key);
@@ -411,6 +492,14 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         const imgH = img.naturalHeight || img.height;
         const rows = Math.max(1, Math.round(opts.cols * (imgH / imgW) / opts.glyphAspect));
         grid = await this._runWorker(getImageData(img), opts.cols, rows);
+        // FIXES.md #5: Sobel edge blend — structural, baked into the cached
+        // grid (edge amount is part of the cache key, so entries stay coherent).
+        if (edge > 0) {
+          grid = {
+            rows: grid.rows, cols: grid.cols, colors: grid.colors,
+            brightness: applyEdgeBlend(grid.brightness, grid.rows, grid.cols, edge),
+          };
+        }
         _gridCache.set(key, grid);
       }
 
@@ -419,7 +508,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._applyA11y(opts);
       if (opts.fitMode === 'width') {
         this._fitWidth(grid.cols);
-        this._setupResizeObserver(grid.cols);
+        this._setupResizeObserver();
       }
     }
 
@@ -452,19 +541,20 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _renderPre(grid, opts) {
-      const charset = resolveCharset(opts.charset);
-      const exp     = contrastExponent(opts.contrast);
-      let brightness = grid.brightness;
-      if (opts.dither > 0) {
-        brightness = opts.ditheringMode === 'bayer'
-          ? applyDitherBayer(brightness, grid.rows, grid.cols, charset.length, opts.dither)
-          : applyDitherFS   (brightness, grid.rows, grid.cols, charset.length, opts.dither);
-      }
+      const charset  = resolveCharset(opts.charset);
+      // FIXES.md #6: tone (gamma+contrast) is applied *before* dithering so
+      // error diffusion lands on charset levels; mapChar then runs neutral.
+      const dithered = opts.dither > 0;
+      const exp      = dithered ? 1.0 : contrastExponent(opts.contrast);
+      const gamma    = dithered ? 1.0 : opts.gamma;
+      const brightness = dithered
+        ? toneAndDither(grid.brightness, grid.rows, grid.cols, charset.length, opts)
+        : grid.brightness;
 
       let text = '';
       for (let r = 0; r < grid.rows; r++) {
         for (let c = 0; c < grid.cols; c++) {
-          text += mapChar(brightness[r * grid.cols + c], charset, exp, opts.gamma);
+          text += mapChar(brightness[r * grid.cols + c], charset, exp, gamma);
         }
         if (r < grid.rows - 1) text += '\n';
       }
@@ -480,16 +570,15 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _renderDOM(grid, opts) {
-      const charset = resolveCharset(opts.charset);
-      const exp     = contrastExponent(opts.contrast);
-
-      // Dithering — operates on a copy so the cached grid is never mutated.
-      let brightness = grid.brightness;
-      if (opts.dither > 0) {
-        brightness = opts.ditheringMode === 'bayer'
-          ? applyDitherBayer(brightness, grid.rows, grid.cols, charset.length, opts.dither)
-          : applyDitherFS   (brightness, grid.rows, grid.cols, charset.length, opts.dither);
-      }
+      const charset  = resolveCharset(opts.charset);
+      // FIXES.md #6: tone before dither (see _renderPre). Copy-on-write — the
+      // cached grid is never mutated.
+      const dithered = opts.dither > 0;
+      const exp      = dithered ? 1.0 : contrastExponent(opts.contrast);
+      const gamma    = dithered ? 1.0 : opts.gamma;
+      const brightness = dithered
+        ? toneAndDither(grid.brightness, grid.rows, grid.cols, charset.length, opts)
+        : grid.brightness;
 
       // Color setup.
       const useColor  = opts.colorMode === 'source' && grid.colors;
@@ -514,7 +603,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         for (let c = 0; c < grid.cols; c++) {
           const idx = r * grid.cols + c;
           const raw = grid.brightness[idx];  // raw luminance for data-brightness
-          const ch  = mapChar(brightness[idx], charset, exp, opts.gamma);
+          const ch  = mapChar(brightness[idx], charset, exp, gamma);
           const sp  = document.createElement('span');
           sp.textContent        = ch;
           sp.dataset.brightness = raw.toFixed(3);
@@ -576,9 +665,11 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       });
     }
 
-    _setupResizeObserver(cols) {
+    _setupResizeObserver() {
       if (this._ro) return;
-      const fit = debounce(() => this._fitWidth(cols), 100);
+      // FIXES.md #2: read cols from the live grid at fire time — a captured
+      // cols goes stale after structural updates (density/cols changes).
+      const fit = debounce(() => { if (this._grid) this._fitWidth(this._grid.cols); }, 100);
       this._ro = new ResizeObserver(fit);
       this._ro.observe(this._el.parentElement || this._el);
     }
@@ -653,6 +744,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
   ASCIIEngine.clearCache          = () => _gridCache.clear();
   ASCIIEngine.prefersReducedMotion = prefersReducedMotion;
   Object.defineProperty(ASCIIEngine, 'cacheSize', { get: () => _gridCache.size, configurable: true });
+
+  // Internals exposed for the test harness only — not public API.
+  ASCIIEngine._internals = {
+    applyEdgeBlend, normalizeEdgeBlend, measureGlyphAspect, toneValue,
+    toneAndDither, popcount, densityToCols,
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = ASCIIEngine;
 

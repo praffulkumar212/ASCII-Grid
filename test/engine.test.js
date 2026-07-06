@@ -1,4 +1,5 @@
 // Minimal DOM shim to run ascii-engine.js in Node and test real behavior.
+// Run: node test/engine.test.js
 'use strict';
 
 class Element {
@@ -39,8 +40,13 @@ global.getComputedStyle = () => ({ color: 'rgb(26,26,26)' });
 global.requestAnimationFrame = (fn) => fn();
 global.ResizeObserver = class { observe(){} disconnect(){} };
 // No Blob/Worker/URL → engine must fall back to main-thread processPixels.
+// Shim glyphs have no offsetHeight → measureGlyphAspect falls back to 2.0,
+// keeping grid-dimension expectations deterministic in Node.
 
-const ASCIIEngine = require(require('path').join(__dirname, '..', 'src', 'ascii-engine.js'));
+const path = require('path');
+const enginePath = path.join(__dirname, '..', 'src', 'ascii-engine.js');
+const ASCIIEngine = require(enginePath);
+const I = ASCIIEngine._internals;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 function gradientImageData(w, h) {
@@ -52,7 +58,7 @@ function gradientImageData(w, h) {
   }
   return { data, width: w, height: h };
 }
-function grabText(el) { // walk DOM-mode rows/spans
+function grabText(el) {
   return el.children.map(row => row.children.map(s => s.textContent).join('')).join('\n');
 }
 let pass = 0, fail = 0;
@@ -68,7 +74,6 @@ function check(name, ok, extra) {
   const engine = new ASCIIEngine(el, { cols: 40, alt: 'test', fitMode: 'fixed' });
   const imgData = gradientImageData(100, 50);
 
-  // Bypass loadImage/canvas: call the internal pipeline directly like _doRender does
   const grid = await engine._runWorker(imgData, 40, Math.round(40 * (50/100) / 2));
   engine._grid = grid;
 
@@ -78,10 +83,10 @@ function check(name, ok, extra) {
 
   // DOM render
   engine._paint(grid, engine._opts);
-  const text = grabText(el);
-  const firstRow = text.split('\n')[0];
+  const firstRow = grabText(el).split('\n')[0];
   check('DOM render: dark char on left, space on right',
-        firstRow[0] === '@' && firstRow[firstRow.length - 1] === ' ', JSON.stringify(firstRow.slice(0,6) + '…' + firstRow.slice(-3)));
+        firstRow[0] === '@' && firstRow[firstRow.length - 1] === ' ',
+        JSON.stringify(firstRow.slice(0,6) + '…' + firstRow.slice(-3)));
   const span = el.children[0].children[5];
   check('spans carry data-brightness + data-cell', span.dataset.brightness != null && span.dataset.cell === '0,5',
         'brightness=' + span.dataset.brightness + ' cell=' + span.dataset.cell);
@@ -97,28 +102,60 @@ function check(name, ok, extra) {
   const after = grid.brightness.slice(0, 400).join(',');
   check('FS dither does not mutate cached grid', before === after);
 
-  // ── BUG PROBE 1: update({density}) after initial render ──
+  // FIX #1 — update({density}) must recompute cols
   const e2 = new ASCIIEngine(new Element('div'), { density: 62, alt: 'x' });
   const colsBefore = e2._opts.cols;              // 62% → 164
-  e2._grid = grid;                                // pretend rendered
-  e2._opts.src = 'fake';                          // avoid re-render path needing image
+  e2._grid = grid;
+  e2._opts.src = 'fake';
   try { await e2.update({ density: 100 }); } catch (_) {}
-  check('BUG: update({density:100}) should change cols 164→240', e2._opts.cols === 240,
+  check('FIX #1: update({density:100}) changes cols 164→240', e2._opts.cols === 240,
         'cols before=' + colsBefore + ' after=' + e2._opts.cols);
+  try { await e2.update({ contrast: 80 }); } catch (_) {}
+  check('FIX #1: non-density update keeps cols', e2._opts.cols === 240, 'cols=' + e2._opts.cols);
+  try { await e2.update({ cols: 120, density: 10 }); } catch (_) {}
+  check('FIX #1: explicit cols still wins over density', e2._opts.cols === 120, 'cols=' + e2._opts.cols);
 
-  // ── BUG PROBE 2: stale cols in ResizeObserver closure ──
-  // (static analysis — _setupResizeObserver early-returns when _ro exists, capturing old cols)
-  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'ascii-engine.js'), 'utf8');
-  check('BUG: ResizeObserver refit captures cols at first render (stale after update)',
-        !/this\._ro\s*=\s*null.*_setupResizeObserver|_grid\.cols/.test(src.match(/_setupResizeObserver\(cols\)\s*{[\s\S]*?}/)[0]),
-        'closure holds first-render cols');
+  // FIX #2 — ResizeObserver reads live grid cols (source-level assertion)
+  const src = require('fs').readFileSync(enginePath, 'utf8');
+  const roBlock = src.match(/_setupResizeObserver\(\)\s*{[\s\S]*?\n    }/);
+  check('FIX #2: RO callback reads this._grid.cols at fire time',
+        !!roBlock && /this\._grid\.cols/.test(roBlock[0]) && !/_setupResizeObserver\(cols\)/.test(src));
 
-  // Bayer determinism
-  const d1 = engine._grid.brightness;
-  const b1 = JSON.stringify(Array.from(d1.slice(0,20)));
+  // FIX #3 — measured glyph aspect with safe fallback
+  check('FIX #3: measureGlyphAspect falls back to 2.0 without real font metrics',
+        I.measureGlyphAspect() === 2.0);
+  check('FIX #3: glyphAspect flows from measurement (engine default = fallback here)',
+        engine._opts.glyphAspect === 2.0, 'aspect=' + engine._opts.glyphAspect);
+
+  // FIX #4 — braille ramp monotonic by dot count
+  const braille = ASCIIEngine.CHARSETS.braille;
+  let monotonic = braille[0] === ' ' && braille.length === 256;
+  for (let i = 2; i < braille.length && monotonic; i++) {
+    if (I.popcount(braille.charCodeAt(i) - 0x2800) < I.popcount(braille.charCodeAt(i - 1) - 0x2800)) monotonic = false;
+  }
+  check('FIX #4: braille ramp is dot-count ordered (256 levels)', monotonic, 'len=' + braille.length);
+
+  // FIX #5 — Sobel edge blend: step edge darkens boundary, flattens elsewhere
+  const stepB = new Float32Array(10 * 20);
+  for (let r = 0; r < 10; r++) for (let c = 0; c < 20; c++) stepB[r*20+c] = c < 10 ? 0.1 : 0.9;
+  const edged = I.applyEdgeBlend(stepB, 10, 20, 1.0);
+  const atEdge = edged[5*20 + 10], flat = edged[5*20 + 3], far = edged[5*20 + 17];
+  check('FIX #5: edge cells dark, flat areas bright', atEdge < 0.3 && flat > 0.9 && far > 0.9,
+        'edge=' + atEdge.toFixed(2) + ' flat=' + flat.toFixed(2) + ' far=' + far.toFixed(2));
+  check('FIX #5: edgeBlend accepts percent or fraction',
+        I.normalizeEdgeBlend(50) === 0.5 && I.normalizeEdgeBlend(0.5) === 0.5 && I.normalizeEdgeBlend(0) === 0);
+
+  // FIX #6 — dithering operates on post-tone values
+  const toned = I.toneAndDither(grid.brightness, grid.rows, grid.cols, 10, {
+    contrast: 100, gamma: 1.0, dither: 1, ditheringMode: 'bayer',
+  });
+  const step = 1 / 9;
+  const onLevels = Array.from(toned.slice(0, 40)).every(v => Math.abs(v / step - Math.round(v / step)) < 1e-6);
+  check('FIX #6: dithered values land exactly on charset levels', onLevels);
+
+  // Bayer determinism + cache intact
   engine._paint(grid, Object.assign({}, engine._opts, { dither: 0.8, ditheringMode: 'bayer' }));
-  const b2 = JSON.stringify(Array.from(engine._grid.brightness.slice(0,20)));
-  check('Bayer dither deterministic + cache intact', b1 === b2);
+  check('Bayer dither deterministic + cache intact', grid.brightness.slice(0,400).join(',') === before);
 
   // pre mode
   const el3 = new Element('div'); new Element('div').appendChild(el3);
@@ -127,4 +164,5 @@ function check(name, ok, extra) {
   check('pre mode renders <pre> with newline rows', el3.children[0].tagName === 'PRE' && el3.children[0].textContent.split('\n').length === 10);
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  if (fail > 0) process.exit(1);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(1); });
