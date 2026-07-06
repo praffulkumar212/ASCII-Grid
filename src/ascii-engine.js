@@ -52,9 +52,11 @@ self.onmessage = function (e) {
     }
   }
 
+  // Transfer brightness (performance-critical Float32Array); clone colors to
+  // avoid a Safari bug where the second transferred buffer arrives zeroed.
   self.postMessage(
     { rows: rows, cols: cols, brightness: brightness, colors: colors },
-    [brightness.buffer, colors.buffer]
+    [brightness.buffer]
   );
 };
 
