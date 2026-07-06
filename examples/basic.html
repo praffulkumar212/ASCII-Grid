@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ascii-engine — Phase 1 test</title>
+  <title>ascii-engine — Phase 2 test</title>
   <style>
     :root {
       --ascii-fg: #1a1a1a;
@@ -14,77 +14,125 @@
       :root { --ascii-fg: #e8e8e8; }
       body  { background: #111; color: #e8e8e8; }
     }
-    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
-    h2   { font-size: 1rem; font-weight: 600; margin: 2rem 0 0.5rem; }
-    .art-wrap { position: relative; border: 1px solid #ccc; padding: 1rem; }
-    label { display: block; margin: 0.5rem 0 0.25rem; font-size: 0.85rem; }
-    input[type=range] { width: 100%; }
-    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1.5rem; margin: 1rem 0; }
-    select, button { padding: 0.25rem 0.5rem; }
-    button { cursor: pointer; }
-    #status { font-size: 0.8rem; color: #888; margin-top: 0.25rem; }
+    body { font-family: sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    h2   { font-size: 0.85rem; font-weight: 600; margin: 1.5rem 0 0.4rem; color: #888; text-transform: uppercase; letter-spacing: .05em; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1.5rem; }
+    .controls label { display: block; font-size: 0.8rem; margin: 0.25rem 0; }
+    .controls input[type=range] { width: 100%; }
+    .controls select, .controls input[type=text], .controls input[type=file] { width: 100%; box-sizing: border-box; padding: 0.2rem 0.4rem; }
+    .row-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    button { padding: 0.3rem 0.8rem; cursor: pointer; }
+    #status { font-size: 0.78rem; color: #888; margin: 0.5rem 0; min-height: 1.2em; }
+    .art-wrap { position: relative; border: 1px solid #ccc; padding: 0.75rem; }
+    .section { margin-bottom: 0.25rem; }
   </style>
 </head>
 <body>
-  <h1 style="font-size:1.4rem;margin:0 0 0.25rem">ascii-engine Phase 1 test</h1>
-  <p style="font-size:0.85rem;color:#888;margin:0 0 1.5rem">
-    Drop an image below, or use the placeholder URL to test with a network image.
-  </p>
+  <h1 style="font-size:1.3rem;margin:0 0 0.1rem">ascii-engine — Phase 2</h1>
+  <p style="font-size:0.8rem;color:#888;margin:0 0 1rem">Source color · themeBlend · saturation · dithering</p>
 
-  <!-- ── Controls ───────────────────────────────────────────────────────── -->
+  <!-- ── Input ── -->
+  <h2>Image</h2>
   <div class="controls">
     <div>
-      <label>Image URL</label>
-      <input id="imgUrl" type="text" style="width:100%;box-sizing:border-box"
+      <label>URL</label>
+      <input id="imgUrl" type="text"
         value="https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png">
     </div>
     <div>
-      <label>Or drop / pick a file</label>
+      <label>Or pick a file (auto-renders)</label>
       <input id="imgFile" type="file" accept="image/*">
+    </div>
+  </div>
+
+  <!-- ── Sampling ── -->
+  <h2>Sampling</h2>
+  <div class="controls">
+    <div>
+      <label>Density — <span id="densityVal">62</span>%  →  cols: <span id="colsVal">164</span></label>
+      <input id="density" type="range" min="0" max="100" value="62">
     </div>
     <div>
       <label>Charset</label>
       <select id="charset">
         <option value="classic" selected>Classic 10-level</option>
         <option value="extended">Extended 70-char</option>
-        <option value="blocks">Unicode blocks</option>
+        <option value="blocks">Unicode blocks ░▒▓█</option>
         <option value="braille">Braille</option>
       </select>
     </div>
     <div>
-      <label>Render mode</label>
-      <select id="renderMode">
-        <option value="dom" selected>DOM (spans)</option>
-        <option value="pre">Pre (text)</option>
-      </select>
-    </div>
-    <div>
-      <label>Density <span id="densityVal">62</span>%</label>
-      <input id="density" type="range" min="0" max="100" value="62">
-    </div>
-    <div>
-      <label>Contrast <span id="contrastVal">50</span>%</label>
+      <label>Contrast — <span id="contrastVal">50</span>%</label>
       <input id="contrast" type="range" min="0" max="100" value="50">
     </div>
     <div>
-      <label>Gamma <span id="gammaVal">1.0</span></label>
+      <label>Gamma — <span id="gammaVal">1.0</span></label>
       <input id="gamma" type="range" min="0.2" max="3.0" step="0.1" value="1.0">
-    </div>
-    <div style="align-self:end">
-      <button id="renderBtn">Render</button>
-      <button id="clearCacheBtn" style="margin-left:0.5rem">Clear cache</button>
     </div>
   </div>
 
-  <div id="status">Ready.</div>
+  <!-- ── Color ── -->
+  <h2>Color (Phase 2)</h2>
+  <div class="controls">
+    <div>
+      <label>Color mode</label>
+      <select id="colorMode">
+        <option value="theme" selected>Theme (CSS vars)</option>
+        <option value="source">Source (image RGB)</option>
+      </select>
+    </div>
+    <div>
+      <label>Saturation — <span id="saturationVal">100</span>% <em style="font-size:0.75rem;color:#888">(source mode only)</em></label>
+      <input id="saturation" type="range" min="0" max="100" value="100">
+    </div>
+    <div>
+      <label>Theme blend — <span id="themeBlendVal">0</span>% <em style="font-size:0.75rem;color:#888">(0=source · 100=theme)</em></label>
+      <input id="themeBlend" type="range" min="0" max="100" value="0">
+    </div>
+    <div></div>
+  </div>
 
-  <!-- ── Art output (declarative engine mount) ──────────────────────────── -->
+  <!-- ── Dithering ── -->
+  <h2>Dithering (Phase 2)</h2>
+  <div class="controls">
+    <div>
+      <label>Dither strength — <span id="ditherVal">0</span>%</label>
+      <input id="dither" type="range" min="0" max="100" value="0">
+    </div>
+    <div>
+      <label>Dithering mode</label>
+      <select id="ditheringMode">
+        <option value="fs" selected>Floyd-Steinberg</option>
+        <option value="bayer">Ordered Bayer</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ── Render ── -->
+  <h2>Render</h2>
+  <div class="controls">
+    <div>
+      <label>Render mode</label>
+      <select id="renderMode">
+        <option value="dom" selected>DOM (interactive spans)</option>
+        <option value="pre">Pre (plain text)</option>
+      </select>
+    </div>
+    <div></div>
+  </div>
+
+  <div class="row-actions">
+    <button id="renderBtn">Render</button>
+    <button id="clearCacheBtn">Clear cache</button>
+  </div>
+  <div id="status">Ready — pick a file or click Render.</div>
+
+  <!-- ── Output ── -->
   <h2>Output</h2>
   <div class="art-wrap">
     <div id="art"></div>
   </div>
 
-  <!-- ── Engine ─────────────────────────────────────────────────────────── -->
   <script src="../src/ascii-engine.js"></script>
   <script>
     const artEl = document.getElementById('art');
@@ -93,15 +141,22 @@
 
     function status(msg) { document.getElementById('status').textContent = msg; }
 
+    function densityToCols(pct) { return Math.round(40 + pct * 2); }
+
     function getOpts() {
       return {
-        charset:    document.getElementById('charset').value,
-        renderMode: document.getElementById('renderMode').value,
-        density:    Number(document.getElementById('density').value),
-        contrast:   Number(document.getElementById('contrast').value),
-        gamma:      Number(document.getElementById('gamma').value),
-        fitMode:    'width',
-        alt:        'ASCII art render of the uploaded image',
+        charset:      document.getElementById('charset').value,
+        renderMode:   document.getElementById('renderMode').value,
+        density:      Number(document.getElementById('density').value),
+        contrast:     Number(document.getElementById('contrast').value),
+        gamma:        Number(document.getElementById('gamma').value),
+        colorMode:    document.getElementById('colorMode').value,
+        saturation:   Number(document.getElementById('saturation').value),
+        themeBlend:   Number(document.getElementById('themeBlend').value),
+        dither:       Number(document.getElementById('dither').value) / 100,
+        ditheringMode:document.getElementById('ditheringMode').value,
+        fitMode:      'width',
+        alt:          'ASCII art render of uploaded image',
       };
     }
 
@@ -128,43 +183,41 @@
       }
     }
 
-    // Wire up controls
-    document.getElementById('renderBtn').addEventListener('click', () => {
-      const fileInput = document.getElementById('imgFile');
-      if (fileInput.files.length) {
-        const url = URL.createObjectURL(fileInput.files[0]);
-        doRender(url);
-      } else {
-        doRender(document.getElementById('imgUrl').value.trim());
-      }
+    // Slider label syncing
+    const sliders = {
+      density:    (v) => { document.getElementById('densityVal').textContent = v; document.getElementById('colsVal').textContent = densityToCols(+v); },
+      contrast:   (v) => document.getElementById('contrastVal').textContent = v,
+      gamma:      (v) => document.getElementById('gammaVal').textContent = (+v).toFixed(1),
+      saturation: (v) => document.getElementById('saturationVal').textContent = v,
+      themeBlend: (v) => document.getElementById('themeBlendVal').textContent = v,
+      dither:     (v) => document.getElementById('ditherVal').textContent = v,
+    };
+    Object.keys(sliders).forEach((id) => {
+      document.getElementById(id).addEventListener('input', (e) => sliders[id](e.target.value));
     });
 
-    // Auto-render when a file is picked
+    // Render button
+    document.getElementById('renderBtn').addEventListener('click', () => {
+      const f = document.getElementById('imgFile').files[0];
+      doRender(f ? URL.createObjectURL(f) : document.getElementById('imgUrl').value.trim());
+    });
+
+    // Auto-render on file pick
     document.getElementById('imgFile').addEventListener('change', (e) => {
-      if (e.target.files.length) {
-        const url = URL.createObjectURL(e.target.files[0]);
-        doRender(url);
-      }
+      if (e.target.files[0]) doRender(URL.createObjectURL(e.target.files[0]));
+    });
+
+    // Live-update on control changes (re-renders from cache when possible)
+    ['charset','renderMode','colorMode','ditheringMode'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', () => { if (imgSrc) doRender(imgSrc); });
+    });
+    ['contrast','gamma','saturation','themeBlend','dither','density'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', () => { if (imgSrc) doRender(imgSrc); });
     });
 
     document.getElementById('clearCacheBtn').addEventListener('click', () => {
       ASCIIEngine.clearCache();
       status('Cache cleared.');
-    });
-
-    // Slider labels
-    ['density','contrast'].forEach((id) => {
-      document.getElementById(id).addEventListener('input', (e) =>
-        document.getElementById(id + 'Val').textContent = e.target.value);
-    });
-    document.getElementById('gamma').addEventListener('input', (e) =>
-      document.getElementById('gammaVal').textContent = Number(e.target.value).toFixed(1));
-
-    // Charset / renderMode → re-render immediately if we have an image
-    ['charset','renderMode'].forEach((id) => {
-      document.getElementById(id).addEventListener('change', () => {
-        if (engine && imgSrc) doRender(imgSrc);
-      });
     });
   </script>
 </body>
