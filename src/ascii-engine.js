@@ -417,6 +417,48 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     return inside;
   }
 
+  // Solid-color background removal: estimate the border color, and if the
+  // border is uniform enough, flood-fill inward masking everything CONNECTED
+  // to the border within tolerance. Interior regions of similar color (e.g. a
+  // dark shadow inside the subject) survive — they're not border-connected.
+  // Handles icons on opaque black/white/any-flat-color backgrounds, where
+  // alpha masking sees nothing.
+  function estimateBackgroundMask(grid, tol) {
+    const rows = grid.rows, cols = grid.cols, N = rows * cols;
+    const colorAt = grid.colors
+      ? (i) => [grid.colors[i*3], grid.colors[i*3+1], grid.colors[i*3+2]]
+      : (i) => { const v = grid.brightness[i] * 255; return [v, v, v]; };
+
+    const border = [];
+    for (let c = 0; c < cols; c++) border.push(c, (rows - 1) * cols + c);
+    for (let r = 1; r < rows - 1; r++) border.push(r * cols, r * cols + cols - 1);
+
+    let ar = 0, ag = 0, ab = 0;
+    for (const i of border) { const p = colorAt(i); ar += p[0]; ag += p[1]; ab += p[2]; }
+    ar /= border.length; ag /= border.length; ab /= border.length;
+    const dist = (i) => {
+      const p = colorAt(i);
+      return Math.sqrt((p[0]-ar)*(p[0]-ar) + (p[1]-ag)*(p[1]-ag) + (p[2]-ab)*(p[2]-ab)) / 441.673;
+    };
+
+    let within = 0;
+    for (const i of border) if (dist(i) < tol) within++;
+    if (within / border.length < 0.6) return null; // busy border → not a flat bg
+
+    const bg = new Uint8Array(N);
+    const queue = [];
+    for (const i of border) if (dist(i) < tol) { bg[i] = 1; queue.push(i); }
+    while (queue.length) {
+      const i = queue.pop();
+      const r = (i / cols) | 0, c = i % cols;
+      if (r > 0        && !bg[i - cols] && dist(i - cols) < tol) { bg[i - cols] = 1; queue.push(i - cols); }
+      if (r < rows - 1 && !bg[i + cols] && dist(i + cols) < tol) { bg[i + cols] = 1; queue.push(i + cols); }
+      if (c > 0        && !bg[i - 1]    && dist(i - 1)    < tol) { bg[i - 1]    = 1; queue.push(i - 1); }
+      if (c < cols - 1 && !bg[i + 1]    && dist(i + 1)    < tol) { bg[i + 1]    = 1; queue.push(i + 1); }
+    }
+    return bg;
+  }
+
   function buildMask(grid, opts) {
     const N = grid.rows * grid.cols;
     let mask = null;
@@ -424,6 +466,13 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     if (opts.maskAlpha !== false && grid.alphas) {
       for (let i = 0; i < N; i++) {
         if (grid.alphas[i] < 13) ensure()[i] = 0; // <5% coverage = outside
+      }
+    }
+    if (opts.maskBackground) {
+      const bg = estimateBackgroundMask(grid, 0.12);
+      if (bg) {
+        ensure();
+        for (let i = 0; i < N; i++) if (bg[i]) mask[i] = 0;
       }
     }
     const poly = opts.mask;
@@ -764,6 +813,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         entranceDuration: raw.entranceDuration != null ? Math.max(0, Number(raw.entranceDuration)) : 900,
         // v0.6 — masking + art quality
         maskAlpha:     !(raw.maskAlpha === false || raw.maskAlpha === 'false'), // default true
+        maskBackground: raw.maskBackground === true || raw.maskBackground === 'true',
         mask:          Array.isArray(raw.mask) && raw.mask.length >= 3 ? raw.mask : null,
         autoContrast:  raw.autoContrast === true || raw.autoContrast === 'true',
         edgeStyle:     raw.edgeStyle === 'line' ? 'line' : 'shade',
@@ -1606,6 +1656,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       'data-ascii-edge-style':    'edgeStyle',
       'data-ascii-auto-contrast': 'autoContrast',
       'data-ascii-mask-alpha':    'maskAlpha',
+      'data-ascii-mask-background':'maskBackground',
       // mask polygons travel via data-ascii-config JSON
     };
     for (const [attr, key] of Object.entries(attrs)) {
@@ -1658,6 +1709,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     mulberry32, quantizeAnsi256, noiseProbability, tickInterval, glowShadow,
     falloffWeight, resolveAccent, effectiveHoverRadius,
     buildMask, pointInPolygon, autoContrastRemap, applyEdge, EDGE_GLYPHS,
+    estimateBackgroundMask,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = ASCIIEngine;

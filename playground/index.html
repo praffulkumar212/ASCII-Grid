@@ -190,6 +190,9 @@
   <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
     <input type="checkbox" id="c-autoContrast" style="width:auto"> Auto contrast
     <span class="val">(percentile stretch)</span></label></div>
+  <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
+    <input type="checkbox" id="c-maskBackground" style="width:auto"> Remove background
+    <span class="val">(flat-color bg → empty)</span></label></div>
   <div><label>Hover effect <span class="val">(move cursor over art)</span></label>
     <select id="c-hoverEffect">
       <option value="none">None</option>
@@ -441,13 +444,17 @@
       if ([...el.options].some((op) => op.value === v)) el.value = v;
     });
     $('c-autoContrast').checked = !!o.autoContrast;
+    $('c-maskBackground').checked = !!o.maskBackground;
     lassoLabel();
   }
 
   function applyPreset(name) {
     preset = name;
-    // reset tweaks, but the lasso is about the image, not the style — keep it
-    overrides = overrides.mask ? { mask: overrides.mask } : {};
+    // reset tweaks, but masks are about the image, not the style — keep them
+    const kept = {};
+    if (overrides.mask) kept.mask = overrides.mask;
+    if (overrides.maskBackground) kept.maskBackground = overrides.maskBackground;
+    overrides = kept;
     document.querySelectorAll('.tile').forEach((t) => t.classList.toggle('active', t.dataset.preset === name));
     if (!src) return;
     render(true);
@@ -470,6 +477,7 @@
   });
   $('c-alt').addEventListener('change', () => { if (engine) engine.update({ alt: altText() }); });
   $('c-autoContrast').addEventListener('change', (e) => { overrides.autoContrast = e.target.checked; debouncedUpdate(); });
+  $('c-maskBackground').addEventListener('change', (e) => { overrides.maskBackground = e.target.checked; debouncedUpdate(); });
 
   function altText() { return $('c-alt').value.trim() || 'ASCII art'; }
   function currentOverrides() { return Object.assign({}, overrides, { alt: altText() }); }

@@ -80,6 +80,7 @@ engine.destroy();</code></pre>
 <tr><td><code>edgeStyle</code></td><td><code>data-ascii-edge-style</code></td><td><code>shade</code></td><td><code>line</code> renders strong edges as oriented glyphs <code>- / | \</code> (used by blueprint &amp; line-art presets)</td></tr>
 <tr><td><code>autoContrast</code></td><td><code>data-ascii-auto-contrast</code></td><td><code>false</code></td><td>Percentile stretch (2%–98%) so washed-out images get full tonal range</td></tr>
 <tr><td><code>maskAlpha</code></td><td><code>data-ascii-mask-alpha</code></td><td><code>true</code></td><td>Transparent image areas render empty and are excluded from noise/hover</td></tr>
+<tr><td><code>maskBackground</code></td><td><code>data-ascii-mask-background</code></td><td><code>false</code></td><td>Removes flat-color backgrounds (flood-fill from borders) — for icons on opaque black/white; no-op on busy borders</td></tr>
 <tr><td><code>mask</code></td><td><em>(config JSON)</em></td><td>—</td><td>Polygon <code>[[x,y]…]</code> in 0–1 image coords — art renders only inside (playground lasso generates this)</td></tr>
 <tr><td><code>glow</code></td><td><code>data-ascii-glow</code></td><td>0</td><td>0–100% phosphor glow (text-shadow, layered ×2 above 60%)</td></tr>
 <tr><td><code>noise</code></td><td><code>data-ascii-noise</code></td><td>0</td><td>0–100% seeded glyph corruption; animate with <code>animSpeed</code></td></tr>

@@ -483,6 +483,43 @@ function check(name, ok, extra) {
       && ASCIIEngine.PRESETS['blueprint'].edgeStyle === 'line';
   })());
 
+  // background removal: icon on OPAQUE black bg (the real screenshot case —
+  // alpha masking can't see it)
+  check('MASK: maskBackground flood-fills flat bg, keeps subject + interior darks', (() => {
+    // 20 cols × 10 rows grid, all black; bright subject rect c5..c14 × r2..r7;
+    // one dark cell INSIDE the subject at (r5, c10) — must survive (not
+    // border-connected).
+    const cols = 20, rows = 10, N = cols * rows;
+    const brightness = new Float32Array(N);
+    const colors = new Uint8Array(N * 3);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const inSubject = c >= 5 && c <= 14 && r >= 2 && r <= 7 && !(r === 5 && c === 10);
+      const v = inSubject ? 220 : 8;
+      brightness[i] = v / 255;
+      colors[i*3] = colors[i*3+1] = colors[i*3+2] = v;
+    }
+    const g = { rows, cols, brightness, colors, alphas: null };
+    const bg = I.estimateBackgroundMask(g, 0.12);
+    if (!bg) return false;
+    const bgCorner = bg[0] === 1;                       // border black = bg
+    const subjKept = bg[3 * cols + 7] === 0;            // subject cell ≠ bg
+    const interiorDarkKept = bg[5 * cols + 10] === 0;   // enclosed dark ≠ bg
+    // and through the engine: masked render leaves bg cells empty
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 20, alt: 'x', fitMode: 'fixed', maskBackground: true });
+    e._grid = g; e._paint(g, e._opts);
+    const corner = el.children[0].children[0].textContent === ' ';
+    const subject = el.children[3].children[7].textContent !== ' ';
+    e.destroy();
+    return bgCorner && subjKept && interiorDarkKept && corner && subject;
+  })());
+
+  check('MASK: maskBackground bails on busy borders (photos untouched)', (() => {
+    // gradient grid: border is NOT uniform → no mask
+    return I.estimateBackgroundMask(grid, 0.12) === null;
+  })());
+
   // auto-contrast
   check('ART: autoContrast stretches a flat ramp to full range', (() => {
     const flat = new Float32Array(400);
