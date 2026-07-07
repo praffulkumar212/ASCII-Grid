@@ -8,6 +8,11 @@
  *          animation (mulberry32), glow, ANSI-256 color quantization.
  *          Canonical preset data also lives in presets/presets.json — keep in
  *          sync (enforced by test/engine.test.js).
+ * Phase 5 (v0.4.0): hover effects (highlight/ripple/invert/pulse/magnify/
+ *          reveal) with transition configs (duration/easing/radius/falloff),
+ *          touch-drag support via pointer events + coarse-pointer ambient
+ *          fallback, reduced-motion respected. DOM mode only; style-only —
+ *          the cached grid and pipeline are never touched.
  */
 (function () {
   'use strict';
@@ -91,6 +96,42 @@
     const gv = 8 + gi * 10;
     const grayDist = (gv-r)*(gv-r) + (gv-g)*(gv-g) + (gv-b)*(gv-b);
     return grayDist < cubeDist ? [gv, gv, gv] : [cr, cg, cb];
+  }
+
+  // ─── Hover effects (Phase 5, README §8) ────────────────────────────────────
+
+  const HOVER_EFFECTS = ['highlight', 'ripple', 'invert', 'pulse', 'magnify', 'reveal'];
+
+  // Weight 0–1 for a cell at distance d (in column units) from the cursor.
+  function falloffWeight(d, radius, mode) {
+    if (d > radius) return 0;
+    if (mode === 'none') return 1;
+    const x = radius === 0 ? 0 : d / radius;
+    if (mode === 'linear') return 1 - x;
+    return 0.5 + 0.5 * Math.cos(Math.PI * x); // 'smooth' (cosine)
+  }
+
+  function resolveAccent(el) {
+    try {
+      const v = getComputedStyle(el).getPropertyValue('--ascii-accent');
+      if (v && v.trim()) return v.trim();
+    } catch (_) { /* no CSSOM (tests) */ }
+    return '#4f8cff';
+  }
+
+  let _hoverStylesInjected = false;
+  function ensureHoverStyles() {
+    if (_hoverStylesInjected || typeof document === 'undefined' || !document.head) return;
+    const st = document.createElement('style');
+    st.id = 'ascii-engine-hover-styles';
+    st.textContent = '@keyframes ascii-pulse{0%,100%{opacity:1}50%{opacity:.45}}';
+    document.head.appendChild(st);
+    _hoverStylesInjected = true;
+  }
+
+  function coarsePointer() {
+    return !!(typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(pointer: coarse)').matches);
   }
 
   // README §9 formulas for animated effects.
@@ -482,6 +523,10 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._preEl     = null;   // pre-mode element + base text (for effects)
       this._baseText  = null;
       this._corrupted = null;
+      this._hoverSaved    = null;   // Phase 5 hover state
+      this._hoverHandlers = null;
+      this._rippleTimers  = null;
+      this._ambient       = null;
     }
 
     // preset baseline ← user overrides → normalized opts
@@ -537,6 +582,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
     destroy() {
       this._stopEffects();
+      this._teardownHover();
       if (this._worker) { this._worker.terminate(); this._worker = null; }
       if (this._ro)     { this._ro.disconnect();    this._ro = null; }
       this._el.innerHTML = '';
@@ -583,6 +629,18 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         fg:           raw.fg          || null,     // preset color overrides →
         bg:           raw.bg          || null,     //   set as inline --ascii-* vars
         accent:       raw.accent      || null,
+        // Phase 5 — hover (render-time; DOM mode only)
+        hoverEffect:   (function (h) {
+          if (!h || h === 'none') return null;
+          if (HOVER_EFFECTS.indexOf(h) === -1) {
+            console.warn('[ascii-engine] Unknown hoverEffect "' + h + '"'); return null;
+          }
+          return h;
+        })(raw.hoverEffect),
+        hoverRadius:   raw.hoverRadius   != null ? Math.max(1, Math.min(20, Number(raw.hoverRadius))) : 4,
+        hoverDuration: raw.hoverDuration != null ? Math.max(0, Number(raw.hoverDuration)) : 150,
+        hoverEasing:   raw.hoverEasing   || 'ease-out',
+        hoverFalloff:  ['none', 'linear', 'smooth'].indexOf(raw.hoverFalloff) !== -1 ? raw.hoverFalloff : 'smooth',
       };
     }
 
@@ -648,13 +706,15 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _paint(grid, opts) {
-      this._stopEffects(); // repaint invalidates span refs / base text
+      this._stopEffects();    // repaint invalidates span refs / base text
+      this._teardownHover();
       if (opts.renderMode === 'pre') {
         this._renderPre(grid, opts);
       } else {
         this._renderDOM(grid, opts);
       }
       this._applyEffectStyles(opts);
+      this._setupHover();
     }
 
     // Glow (README §9: text-shadow 0 0 pct×12px currentColor, layered ×2 >60%)
@@ -861,6 +921,185 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._ro = new ResizeObserver(fit);
       this._ro.observe(this._el.parentElement || this._el);
     }
+
+    // ── Hover system (Phase 5) ─────────────────────────────────────────────
+    // Pure CSS/JS on top of day-one data-cell attrs — zero pipeline changes.
+    // Pointer events cover mouse AND touch-drag (README §8 touch fallback);
+    // coarse-pointer devices additionally get a slow ambient auto-animation,
+    // skipped under prefers-reduced-motion.
+
+    _setupHover() {
+      const o = this._opts;
+      if (!o.hoverEffect || o.renderMode === 'pre' || !this._spans) return;
+      ensureHoverStyles();
+      this._hoverSaved = new Map();   // span → snapshot of mutated style props
+      this._rippleTimers = [];
+
+      if (o.hoverEffect === 'reveal') {
+        for (const sp of this._spans) sp.style.opacity = '0.15';
+      }
+
+      if (this._el.addEventListener) {
+        const onMove = (e) => {
+          const cell = e.target && e.target.dataset && e.target.dataset.cell;
+          if (!cell) return;
+          const rc = cell.split(',');
+          if (o.hoverEffect === 'ripple') return; // ripple is press-driven
+          this._hoverAt(+rc[1], +rc[0]);
+        };
+        const onLeave = () => this._hoverClear();
+        const onDown = (e) => {
+          if (o.hoverEffect !== 'ripple') return;
+          const cell = e.target && e.target.dataset && e.target.dataset.cell;
+          if (!cell) return;
+          const rc = cell.split(',');
+          this._rippleAt(+rc[1], +rc[0]);
+        };
+        this._el.addEventListener('pointermove', onMove);
+        this._el.addEventListener('pointerleave', onLeave);
+        this._el.addEventListener('pointerdown', onDown);
+        this._hoverHandlers = { onMove, onLeave, onDown };
+      }
+      this._startAmbient();
+    }
+
+    _teardownHover() {
+      if (this._ambient) { clearInterval(this._ambient); this._ambient = null; }
+      if (this._rippleTimers) { this._rippleTimers.forEach(clearTimeout); this._rippleTimers = null; }
+      this._hoverClear();
+      if (this._hoverHandlers && this._el.removeEventListener) {
+        this._el.removeEventListener('pointermove',  this._hoverHandlers.onMove);
+        this._el.removeEventListener('pointerleave', this._hoverHandlers.onLeave);
+        this._el.removeEventListener('pointerdown',  this._hoverHandlers.onDown);
+      }
+      this._hoverHandlers = null;
+      // undo reveal base state
+      if (this._opts && this._opts.hoverEffect === 'reveal' && this._spans) {
+        for (const sp of this._spans) sp.style.opacity = '';
+      }
+      this._hoverSaved = null;
+    }
+
+    _saveSpan(sp) {
+      if (!this._hoverSaved.has(sp)) {
+        this._hoverSaved.set(sp, {
+          color: sp.style.color || '', opacity: sp.style.opacity || '',
+          transform: sp.style.transform || '', filter: sp.style.filter || '',
+          animation: sp.style.animation || '', display: sp.style.display || '',
+        });
+        const o = this._opts;
+        sp.style.transition = ['color', 'opacity', 'transform', 'filter']
+          .map((p) => p + ' ' + o.hoverDuration + 'ms ' + o.hoverEasing).join(', ');
+      }
+    }
+
+    _hoverClear() {
+      if (!this._hoverSaved) return;
+      for (const [sp, s] of this._hoverSaved) {
+        sp.style.color = s.color; sp.style.opacity = s.opacity;
+        sp.style.transform = s.transform; sp.style.filter = s.filter;
+        sp.style.animation = s.animation; sp.style.display = s.display;
+      }
+      this._hoverSaved.clear();
+    }
+
+    // Apply the configured effect centred on cell (c0, r0).
+    _hoverAt(c0, r0) {
+      const o = this._opts, grid = this._grid;
+      if (!grid || !this._spans || !this._hoverSaved) return;
+      this._hoverClear();
+      const accent = resolveAccent(this._el);
+      const radius = o.hoverRadius;
+      const aspect = o.glyphAspect || GLYPH_ASPECT; // rows are ~aspect× taller than cols
+      const rSpan  = Math.ceil(radius / aspect) + 1;
+
+      for (let r = Math.max(0, r0 - rSpan); r <= Math.min(grid.rows - 1, r0 + rSpan); r++) {
+        for (let c = Math.max(0, c0 - radius); c <= Math.min(grid.cols - 1, c0 + radius); c++) {
+          const dx = c - c0, dy = (r - r0) * aspect;
+          const t = falloffWeight(Math.sqrt(dx * dx + dy * dy), radius, o.hoverFalloff);
+          if (t <= 0) continue;
+          const sp = this._spans[r * grid.cols + c];
+          if (!sp) continue;
+          this._saveSpan(sp);
+          this._applyHoverStyle(sp, t, accent);
+        }
+      }
+    }
+
+    _applyHoverStyle(sp, t, accent) {
+      switch (this._opts.hoverEffect) {
+        case 'highlight':
+          sp.style.color = accent;
+          sp.style.opacity = (0.55 + 0.45 * t).toFixed(2);
+          break;
+        case 'invert':
+          sp.style.filter = 'invert(' + t.toFixed(2) + ')';
+          break;
+        case 'pulse':
+          sp.style.color = accent;
+          sp.style.animation = 'ascii-pulse ' + (this._opts.hoverDuration * 4) + 'ms ease-in-out infinite';
+          break;
+        case 'magnify':
+          sp.style.display = 'inline-block';
+          sp.style.transform = 'scale(' + (1 + 0.6 * t).toFixed(2) + ')';
+          break;
+        case 'reveal':
+          sp.style.opacity = (0.15 + 0.85 * t).toFixed(2);
+          break;
+        case 'ripple': // handled by _rippleAt; treat stray calls as highlight
+          sp.style.color = accent;
+          break;
+      }
+    }
+
+    // Expanding ring: accent flash reaches each cell after a distance-
+    // proportional delay, then restores.
+    _rippleAt(c0, r0) {
+      const o = this._opts, grid = this._grid;
+      if (!grid || !this._spans || prefersReducedMotion()) return;
+      const accent = resolveAccent(this._el);
+      const radius = o.hoverRadius * 2; // rings read better a bit wider
+      const aspect = o.glyphAspect || GLYPH_ASPECT;
+      const perCell = Math.max(20, o.hoverDuration / radius);
+      const rSpan = Math.ceil(radius / aspect) + 1;
+
+      for (let r = Math.max(0, r0 - rSpan); r <= Math.min(grid.rows - 1, r0 + rSpan); r++) {
+        for (let c = Math.max(0, c0 - radius); c <= Math.min(grid.cols - 1, c0 + radius); c++) {
+          const dx = c - c0, dy = (r - r0) * aspect;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d > radius) continue;
+          const sp = this._spans[r * grid.cols + c];
+          if (!sp) continue;
+          const delay = Math.round(d * perCell);
+          this._rippleTimers.push(setTimeout(() => {
+            this._saveSpan(sp);
+            sp.style.color = accent;
+            this._rippleTimers.push(setTimeout(() => {
+              const s = this._hoverSaved && this._hoverSaved.get(sp);
+              if (s) { sp.style.color = s.color; this._hoverSaved.delete(sp); }
+            }, o.hoverDuration));
+          }, delay));
+        }
+      }
+    }
+
+    // Coarse-pointer (touch) fallback: a slow Lissajous drift of the virtual
+    // cursor. Skipped under prefers-reduced-motion (README §8).
+    _startAmbient() {
+      if (this._ambient) return;
+      const o = this._opts;
+      if (!coarsePointer() || prefersReducedMotion() || o.hoverEffect === 'ripple') return;
+      if (typeof setInterval === 'undefined') return;
+      let t = 0;
+      this._ambient = setInterval(() => {
+        const g = this._grid;
+        if (!g) return;
+        t += 0.045;
+        const c = Math.round(g.cols / 2 + Math.cos(t) * g.cols * 0.35);
+        const r = Math.round(g.rows / 2 + Math.sin(t * 1.7) * g.rows * 0.35);
+        this._hoverAt(c, r);
+      }, 120);
+    }
   }
 
   // Expose globally early so later setup errors can't block access.
@@ -900,6 +1139,11 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       'data-ascii-fg':            'fg',
       'data-ascii-bg':            'bg',
       'data-ascii-accent':        'accent',
+      'data-ascii-hover':         'hoverEffect',
+      'data-ascii-hover-radius':  'hoverRadius',
+      'data-ascii-hover-duration':'hoverDuration',
+      'data-ascii-hover-easing':  'hoverEasing',
+      'data-ascii-hover-falloff': 'hoverFalloff',
     };
     for (const [attr, key] of Object.entries(attrs)) {
       if (config[key] != null) continue;
@@ -942,12 +1186,14 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
   Object.defineProperty(ASCIIEngine, 'cacheSize', { get: () => _gridCache.size, configurable: true });
 
   ASCIIEngine.PRESETS = PRESETS;
+  ASCIIEngine.HOVER_EFFECTS = HOVER_EFFECTS.slice();
 
   // Internals exposed for the test harness only — not public API.
   ASCIIEngine._internals = {
     applyEdgeBlend, normalizeEdgeBlend, measureGlyphAspect, toneValue,
     toneAndDither, popcount, densityToCols,
     mulberry32, quantizeAnsi256, noiseProbability, tickInterval, glowShadow,
+    falloffWeight, resolveAccent,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = ASCIIEngine;

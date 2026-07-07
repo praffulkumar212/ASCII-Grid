@@ -19,6 +19,7 @@ class Element {
   insertBefore(ch, ref) { ch.parentNode = ch.parentElement = this; this.children.unshift(ch); return ch; }
   removeChild(ch) { this.children = this.children.filter(c => c !== ch); }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
+  addEventListener() {} removeEventListener() {}
   setAttribute(k, v) { this.attributes[k] = String(v); }
   getAttribute(k) { return this.attributes[k] != null ? this.attributes[k] : null; }
   querySelector() { return null; }
@@ -38,7 +39,7 @@ global.document = {
   addEventListener: () => {},
   body: new Element('body'),
 };
-global.getComputedStyle = () => ({ color: 'rgb(26,26,26)' });
+global.getComputedStyle = () => ({ color: 'rgb(26,26,26)', getPropertyValue: () => '#4f8cff' });
 global.requestAnimationFrame = (fn) => fn();
 global.ResizeObserver = class { observe(){} disconnect(){} };
 // No Blob/Worker/URL → engine must fall back to main-thread processPixels.
@@ -247,6 +248,79 @@ function check(name, ok, extra) {
   eG._grid = grid; eG._paint(grid, eG._opts);
   check('P3: crt preset applies glow shadow + fg/bg vars',
         /currentColor/.test(elG.style.textShadow) && elG.style['--ascii-fg'] === '#33ff33' && elG.style['--ascii-bg'] === '#031103');
+
+  // ── Phase 5: hover effects ──────────────────────────────────────────────
+
+  check('P5: hover opts normalize (defaults + validation)', (() => {
+    const e = new ASCIIEngine(new Element('div'), { hoverEffect: 'highlight', alt: 'x' });
+    const bad = new ASCIIEngine(new Element('div'), { hoverEffect: 'wobble', alt: 'x' });
+    return e._opts.hoverEffect === 'highlight' && e._opts.hoverRadius === 4
+      && e._opts.hoverDuration === 150 && e._opts.hoverFalloff === 'smooth'
+      && bad._opts.hoverEffect === null;
+  })());
+
+  check('P5: falloff weights — smooth center 1 edge 0, monotonic', (() => {
+    const f = I.falloffWeight;
+    return f(0, 4, 'smooth') === 1 && f(4, 4, 'smooth') < 1e-9 && f(5, 4, 'smooth') === 0
+      && f(1, 4, 'smooth') > f(3, 4, 'smooth')
+      && f(2, 4, 'linear') === 0.5 && f(3, 4, 'none') === 1;
+  })());
+
+  // highlight: accent within radius, untouched outside, clear restores
+  const elH = new Element('div'); new Element('div').appendChild(elH);
+  const eH = new ASCIIEngine(elH, { cols: 40, alt: 'x', fitMode: 'fixed', hoverEffect: 'highlight', hoverRadius: 3 });
+  eH._grid = grid; eH._paint(grid, eH._opts);
+  const spanAt = (r, c) => elH.children[r].children[c];
+  const preColor = spanAt(5, 20).style.color || '';
+  eH._hoverAt(20, 5);
+  const centerColored = spanAt(5, 20).style.color === '#4f8cff';
+  const farUntouched  = (spanAt(5, 30).style.color || '') === '' && (spanAt(0, 0).style.color || '') === '';
+  check('P5: highlight colors center accent, leaves far cells alone', centerColored && farUntouched);
+  check('P5: falloff → center more opaque than ring edge',
+        +spanAt(5, 20).style.opacity > +spanAt(5, 22).style.opacity,
+        spanAt(5,20).style.opacity + ' vs ' + spanAt(5,22).style.opacity);
+  check('P5: transition config lands on touched spans',
+        /150ms ease-out/.test(spanAt(5, 20).style.transition));
+  eH._hoverClear();
+  check('P5: clear restores original styles', (spanAt(5, 20).style.color || '') === preColor
+        && (spanAt(5, 20).style.opacity || '') === '');
+
+  // move: previous position restored when cursor moves on
+  eH._hoverAt(20, 5); eH._hoverAt(35, 8);
+  check('P5: moving hover restores previous cells', (spanAt(5, 20).style.color || '') === ''
+        && spanAt(8, 35).style.color === '#4f8cff');
+  eH._hoverClear();
+
+  // reveal: base state + hover lift + teardown restore
+  const elR = new Element('div'); new Element('div').appendChild(elR);
+  const eR = new ASCIIEngine(elR, { cols: 40, alt: 'x', fitMode: 'fixed', hoverEffect: 'reveal', hoverRadius: 3 });
+  eR._grid = grid; eR._paint(grid, eR._opts);
+  const rSpanAt = (r, c) => elR.children[r].children[c];
+  check('P5: reveal dims all cells to 0.15 base', rSpanAt(0, 0).style.opacity === '0.15' && rSpanAt(9, 39).style.opacity === '0.15');
+  eR._hoverAt(20, 5);
+  check('P5: reveal lifts hovered center to ~1', +rSpanAt(5, 20).style.opacity === 1);
+  eR._teardownHover();
+  check('P5: teardown undoes reveal base state', (rSpanAt(0, 0).style.opacity || '') === '');
+
+  // magnify: transform + inline-block
+  const elM = new Element('div'); new Element('div').appendChild(elM);
+  const eM = new ASCIIEngine(elM, { cols: 40, alt: 'x', fitMode: 'fixed', hoverEffect: 'magnify' });
+  eM._grid = grid; eM._paint(grid, eM._opts);
+  eM._hoverAt(20, 5);
+  const mSpan = elM.children[5].children[20];
+  check('P5: magnify scales center span 1.6× inline-block',
+        mSpan.style.transform === 'scale(1.60)' && mSpan.style.display === 'inline-block');
+  eM.destroy();
+
+  check('P5: hover skipped in pre mode', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed', renderMode: 'pre', hoverEffect: 'highlight' });
+    e._grid = grid; e._paint(grid, e._opts);
+    return e._hoverSaved === null || e._hoverSaved === undefined || e._hoverSaved.size === 0;
+  })());
+
+  check('P5: hover is style-only — cached grid untouched', grid.brightness.slice(0,400).join(',') === before);
+  eH.destroy(); eR.destroy();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail > 0 ? 1 : 0);

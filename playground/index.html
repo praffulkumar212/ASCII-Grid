@@ -138,6 +138,33 @@
     </select></div>
   <div><label>Alt text (required for accessibility)</label>
     <input type="text" id="c-alt" placeholder="Describe the image…"></div>
+  <div><label>Hover effect <span class="val">(move cursor over art)</span></label>
+    <select id="c-hoverEffect">
+      <option value="none">None</option>
+      <option value="highlight">Highlight</option>
+      <option value="ripple">Ripple (click)</option>
+      <option value="invert">Invert</option>
+      <option value="pulse">Color pulse</option>
+      <option value="magnify">Magnify</option>
+      <option value="reveal">Reveal on hover</option>
+    </select></div>
+  <div><label>Hover radius <span class="val" id="v-hoverRadius">4</span></label>
+    <input type="range" id="c-hoverRadius" min="1" max="12" value="4"></div>
+  <div><label>Transition duration <span class="val" id="v-hoverDuration">150ms</span></label>
+    <input type="range" id="c-hoverDuration" min="0" max="600" step="10" value="150"></div>
+  <div><label>Easing</label>
+    <select id="c-hoverEasing">
+      <option value="ease-out">ease-out</option>
+      <option value="ease-in-out">ease-in-out</option>
+      <option value="linear">linear</option>
+      <option value="cubic-bezier(.2,.9,.3,1.4)">springy</option>
+    </select></div>
+  <div><label>Falloff</label>
+    <select id="c-hoverFalloff">
+      <option value="smooth">Smooth (cosine)</option>
+      <option value="linear">Linear</option>
+      <option value="none">None (uniform)</option>
+    </select></div>
 </div>
 
 <div id="preview-wrap"><div id="art"></div></div>
@@ -163,8 +190,8 @@
   const $ = (id) => document.getElementById(id);
   const artEl = $('art');
 
-  const SLIDERS  = ['density','contrast','gamma','dither','edgeBlend','saturation','themeBlend','glow','noise','animSpeed'];
-  const SELECTS  = ['charset','colorMode'];
+  const SLIDERS  = ['density','contrast','gamma','dither','edgeBlend','saturation','themeBlend','glow','noise','animSpeed','hoverRadius','hoverDuration'];
+  const SELECTS  = ['charset','colorMode','hoverEffect','hoverEasing','hoverFalloff'];
   const PCT      = new Set(['density','contrast','dither','edgeBlend','saturation','themeBlend','glow','noise','animSpeed']);
   // Engine expects 0–1 for these; sliders are 0–100 for consistency.
   const AS_FRACTION = new Set(['dither','edgeBlend']);
@@ -256,7 +283,12 @@
   function optToSlider(key, val) {
     return AS_FRACTION.has(key) ? Math.round(val * 100) : val;
   }
-  function fmt(key, val) { return key === 'gamma' ? Number(val).toFixed(1) : val + (PCT.has(key) ? '%' : ''); }
+  function fmt(key, val) {
+    if (key === 'gamma') return Number(val).toFixed(1);
+    if (key === 'hoverDuration') return val + 'ms';
+    if (key === 'hoverRadius') return val;
+    return val + (PCT.has(key) ? '%' : '');
+  }
 
   function syncControlsFromOpts(o) {
     SLIDERS.forEach((k) => {
@@ -269,7 +301,8 @@
     });
     SELECTS.forEach((k) => {
       const el = $('c-' + k);
-      if ([...el.options].some((op) => op.value === o[k])) el.value = o[k];
+      const v = k === 'hoverEffect' && o[k] == null ? 'none' : o[k];
+      if ([...el.options].some((op) => op.value === v)) el.value = v;
     });
   }
 
