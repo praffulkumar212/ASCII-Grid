@@ -1,5 +1,5 @@
 /*!
- * ascii-engine.js — v0.3.0 (Phase 3)
+ * ascii-engine.js — v0.5.2
  * Phase 1: image → brightness grid → dom/pre render, fitMode, caching, a11y
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
  * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
@@ -807,34 +807,47 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       }
 
       const bg = opts.bg || null;
-      ctx.font = (7 * scale) + 'px monospace';
+      // Calibrate the font so the glyph advance fills the cell pitch. A naive
+      // "fontSize < cellWidth" leaves ~50% of every cell empty → sparse,
+      // washed-out art (QA finding: "canvas colors are very dull").
+      ctx.font = '100px monospace';
+      const adv100 = ctx.measureText('0').width || 60;   // advance at 100px
+      const fontPx = Math.min(Math.floor(cw * 100 / adv100), ch);
+      ctx.font = fontPx + 'px monospace';
       ctx.textBaseline = 'top';
-      if (opts.glow > 0) {
-        ctx.shadowColor = fg;
-        ctx.shadowBlur  = (opts.glow / 100) * 12 * scale;
-      }
+      const yOff = Math.max(0, (ch - fontPx) / 2);
+      const glowBlur = opts.glow > 0 ? (opts.glow / 100) * 12 * scale : 0;
+      if (glowBlur) { ctx.shadowColor = fg; ctx.shadowBlur = glowBlur; }
 
       const meta = {
         canvas, ctx, cw, ch, cols: grid.cols, rows: grid.rows, chars, colors, bg,
+        yOff, glowBlur, useColor,
         drawCell(i, chOverride, colorOverride) {
           const r = (i / this.cols) | 0, c = i % this.cols;
+          const sb = this.ctx.shadowBlur; this.ctx.shadowBlur = 0;
           this.ctx.clearRect(c * this.cw, r * this.ch, this.cw, this.ch);
           if (this.bg) {
-            const sb = this.ctx.shadowBlur; this.ctx.shadowBlur = 0;
             this.ctx.fillStyle = this.bg;
             this.ctx.fillRect(c * this.cw, r * this.ch, this.cw, this.ch);
-            this.ctx.shadowBlur = sb;
           }
-          this.ctx.fillStyle = colorOverride || this.colors[i];
-          this.ctx.fillText(chOverride || this.chars[i], c * this.cw + this.cw * 0.1, r * this.ch + (this.ch - 7 * 2) / 2);
+          this.ctx.shadowBlur = sb;
+          const color = colorOverride || this.colors[i];
+          if (this.glowBlur) this.ctx.shadowColor = color; // glow matches the glyph
+          this.ctx.fillStyle = color;
+          this.ctx.fillText(chOverride || this.chars[i], c * this.cw, r * this.ch + this.yOff);
         },
       };
-      if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      if (bg) {
+        const sb = ctx.shadowBlur; ctx.shadowBlur = 0;
+        ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.shadowBlur = sb;
+      }
       for (let i = 0; i < chars.length; i++) {
         if (chars[i] === ' ') continue;
         const r = (i / grid.cols) | 0, c = i % grid.cols;
+        if (glowBlur) ctx.shadowColor = colors[i]; // per-glyph glow, not flat fg
         ctx.fillStyle = colors[i];
-        ctx.fillText(chars[i], c * cw + cw * 0.1, r * ch + (ch - 7 * 2) / 2);
+        ctx.fillText(chars[i], c * cw, r * ch + yOff);
       }
 
       this._el.innerHTML = '';
@@ -1188,6 +1201,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       if (!o.hoverEffect || o.renderMode === 'pre' || !(this._spans || this._canvasMeta)) return;
       ensureHoverStyles();
       this._hoverSaved = new Map();   // span → snapshot of mutated style props
+      this._hoverApplied = null;      // span → quantized intensity (diffing)
       this._rippleTimers = [];
 
       if (o.hoverEffect === 'reveal' && this._spans) {
@@ -1248,6 +1262,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
           color: sp.style.color || '', opacity: sp.style.opacity || '',
           transform: sp.style.transform || '', filter: sp.style.filter || '',
           animation: sp.style.animation || '', display: sp.style.display || '',
+          transition: sp.style.transition || '',
         });
         const o = this._opts;
         sp.style.transition = ['color', 'opacity', 'transform', 'filter']
@@ -1255,17 +1270,24 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       }
     }
 
+    _restoreSpan(sp) {
+      const s = this._hoverSaved && this._hoverSaved.get(sp);
+      if (!s) return;
+      sp.style.color = s.color; sp.style.opacity = s.opacity;
+      sp.style.transform = s.transform; sp.style.filter = s.filter;
+      sp.style.animation = s.animation; sp.style.display = s.display;
+      sp.style.transition = s.transition;
+      this._hoverSaved.delete(sp);
+    }
+
     _hoverClear() {
       if (this._canvasHoverPrev && this._canvasMeta) {
         for (const i of this._canvasHoverPrev) this._canvasMeta.drawCell(i, null, null);
         this._canvasHoverPrev = null;
       }
+      this._hoverApplied = null;
       if (!this._hoverSaved) return;
-      for (const [sp, s] of this._hoverSaved) {
-        sp.style.color = s.color; sp.style.opacity = s.opacity;
-        sp.style.transform = s.transform; sp.style.filter = s.filter;
-        sp.style.animation = s.animation; sp.style.display = s.display;
-      }
+      for (const sp of Array.from(this._hoverSaved.keys())) this._restoreSpan(sp);
       this._hoverSaved.clear();
     }
 
@@ -1297,23 +1319,39 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       }
 
       if (!this._spans || !this._hoverSaved) return;
-      this._hoverClear();
+      // PERF: incremental diff. A cursor move shifts the affected disc by one
+      // cell, so most spans keep their exact intensity — restore only spans
+      // that left the disc, write only spans whose (quantized) intensity
+      // changed. This is what makes big relative radii (25% of width) smooth,
+      // and it also fixes effects appearing "stuck": the old full clear-and-
+      // reapply flooded paint with thousands of style writes per frame.
       const accent = resolveAccent(this._el);
       const radius = effectiveHoverRadius(o.hoverRadius, grid.cols);
       const aspect = o.glyphAspect || GLYPH_ASPECT; // rows are ~aspect× taller than cols
       const rSpan  = Math.ceil(radius / aspect) + 1;
+      const prev   = this._hoverApplied || new Map();
+      const next   = new Map();
 
       for (let r = Math.max(0, r0 - rSpan); r <= Math.min(grid.rows - 1, r0 + rSpan); r++) {
         for (let c = Math.max(0, c0 - radius); c <= Math.min(grid.cols - 1, c0 + radius); c++) {
           const dx = c - c0, dy = (r - r0) * aspect;
           const t = falloffWeight(Math.sqrt(dx * dx + dy * dy), radius, o.hoverFalloff);
-          if (t <= 0) continue;
+          if (t < 0.03) continue; // imperceptible — skip the style write
           const sp = this._spans[r * grid.cols + c];
           if (!sp) continue;
-          this._saveSpan(sp);
-          this._applyHoverStyle(sp, t, accent);
+          next.set(sp, Math.round(t * 20) / 20); // quantize → stable style strings
         }
       }
+
+      for (const sp of prev.keys()) {
+        if (!next.has(sp)) this._restoreSpan(sp);
+      }
+      for (const [sp, t] of next) {
+        if (prev.get(sp) === t) continue; // unchanged intensity — no write
+        this._saveSpan(sp);
+        this._applyHoverStyle(sp, t, accent);
+      }
+      this._hoverApplied = next;
     }
 
     _applyHoverStyle(sp, t, accent) {
@@ -1370,10 +1408,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         this._rippleTimers.push(setTimeout(() => {
           for (const sp of spans) { this._saveSpan(sp); sp.style.color = accent; }
           this._rippleTimers.push(setTimeout(() => {
-            for (const sp of spans) {
-              const s = this._hoverSaved && this._hoverSaved.get(sp);
-              if (s) { sp.style.color = s.color; this._hoverSaved.delete(sp); }
-            }
+            for (const sp of spans) this._restoreSpan(sp);
           }, o.hoverDuration));
         }, Math.round(ring * perRing)));
       }

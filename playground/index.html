@@ -78,6 +78,13 @@
   #preview-wrap { position: relative; border: 1px solid var(--pg-border); border-radius: 10px;
                   background: var(--pg-card); padding: 1rem; min-height: 60vh;
                   max-height: calc(100vh - 7rem); overflow: auto; }
+  #fsBtn { position: absolute; top: .6rem; right: .6rem; z-index: 2; padding: .25rem .6rem;
+           font-size: .78rem; opacity: .75; }
+  #fsBtn:hover { opacity: 1; }
+  #preview-wrap:fullscreen { max-height: none; border: none; border-radius: 0;
+                             display: flex; align-items: center; justify-content: center;
+                             background: var(--pg-bg); }
+  #preview-wrap:fullscreen #art { width: min(96vw, 1800px); }
   #status { font-size: .75rem; color: var(--pg-muted); margin-top: .4rem; min-height: 1.1em; }
 
   /* Step 4 — export */
@@ -98,7 +105,10 @@
 
 <!-- ══ LEFT: preview ══ -->
 <main id="left">
-  <div id="preview-wrap"><div id="art"></div></div>
+  <div id="preview-wrap">
+    <button id="fsBtn" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+    <div id="art"></div>
+  </div>
   <div id="status">No image yet.</div>
 </main>
 
@@ -245,6 +255,20 @@
     if (engine) render();
   });
 
+  // ── fullscreen ───────────────────────────────────────────────────────────
+  $('fsBtn').addEventListener('click', () => {
+    const wrap = $('preview-wrap');
+    if (document.fullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    } else {
+      (wrap.requestFullscreen || wrap.webkitRequestFullscreen || function(){}).call(wrap);
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    $('fsBtn').textContent = document.fullscreenElement ? '⛶ Exit' : '⛶ Fullscreen';
+    // ResizeObserver refits the art to the new container width automatically
+  });
+
   // ── Step 1: input ────────────────────────────────────────────────────────
   const drop = $('drop');
   drop.addEventListener('click', () => $('file').click());
@@ -385,10 +409,12 @@
   }
   function showStats(t0) {
     const g = engine && engine._grid;
+    const big = g && g.cols * g.rows > 10000 && engine._opts.renderMode === 'dom';
     status((typeof t0 === 'number' ? Math.round(performance.now() - t0) + ' ms  ·  ' : '')
       + (g ? 'grid ' + g.cols + '×' + g.rows + '  ·  ' : '')
       + 'preset: ' + preset
-      + (Object.keys(overrides).length ? '  ·  tweaked: ' + Object.keys(overrides).join(', ') : ''));
+      + (Object.keys(overrides).length ? '  ·  tweaked: ' + Object.keys(overrides).join(', ') : '')
+      + (big ? '  ·  ⚠ ' + (g.cols * g.rows) + ' glyphs — switch Render mode to Canvas for smooth animation' : ''));
   }
 
   // ── Step 4: export ───────────────────────────────────────────────────────

@@ -101,7 +101,7 @@ Fix direction:
 - Update: playground radius slider (switch to % of width), docs table,
   `data-ascii-hover-radius` parsing ('25%' string), tests.
 
-## 9. ENHANCEMENT — video (MP4) export of animated renders  [OPEN — requested 2026-07-07]
+## 9. ENHANCEMENT — video (MP4) export of animated renders  [PARKED 2026-07-07 — do not pick up until unparked]
 
 PNG/SVG exports capture a static frame; animated presets (glitch, matrix-rain,
 CRT noise, entrance reveals, ripple) lose their point. Add a "Record video"
@@ -119,7 +119,25 @@ Fix direction:
 - Playground: duration control + record button in Step 4, disabled when
   noise/animSpeed are both 0 (nothing moves).
 
-## 10. NOTES — no action needed now
+## 10. QA ROUND 2026-07-07 (post-launch, live-site testing)  [ALL FIXED v0.5.2]
+
+- **DOM hover choppy / effects appearing "stuck" (reported on invert)** — the
+  hover pass fully cleared + reapplied every affected span per frame; at 25%
+  radius that's thousands of style writes (and invert's `filter` is the most
+  paint-expensive). Fixed: incremental diffing — restore only spans leaving the
+  disc, write only spans whose quantized intensity changed; skip t<0.03; span
+  `transition` now snapshotted/restored too.
+- **Canvas colors dull** — the canvas font (14px) only advanced ~8.4px inside a
+  16px cell, leaving ~50% of every cell empty. Fixed: font calibrated via
+  `measureText` so glyph advance fills the cell pitch; glow shadow now uses the
+  glyph's own color instead of flat fg.
+- **Fullscreen** — added to playground preview (Fullscreen API, Esc exits;
+  ResizeObserver refits the grid automatically).
+- **Residual DOM lag at extreme settings** — inherent to per-glyph text-shadow
+  at >10k nodes; playground status bar now shows a live warning steering to
+  canvas mode.
+
+## 11. NOTES — no action needed now
 
 - Grid cache Map is unbounded; fine at current sizes, revisit if playground
   churns many images (LRU cap ~20).

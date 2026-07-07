@@ -288,14 +288,38 @@ function check(name, ok, extra) {
   check('P5: transition config lands on touched spans',
         /150ms ease-out/.test(spanAt(5, 20).style.transition));
   eH._hoverClear();
-  check('P5: clear restores original styles', (spanAt(5, 20).style.color || '') === preColor
-        && (spanAt(5, 20).style.opacity || '') === '');
+  check('P5: clear restores original styles incl. transition', (spanAt(5, 20).style.color || '') === preColor
+        && (spanAt(5, 20).style.opacity || '') === ''
+        && (spanAt(5, 20).style.transition || '') === '');
 
   // move: previous position restored when cursor moves on
   eH._hoverAt(20, 5); eH._hoverAt(35, 8);
   check('P5: moving hover restores previous cells', (spanAt(5, 20).style.color || '') === ''
         && spanAt(8, 35).style.color === '#4f8cff');
+  check('QA: incremental diff — unchanged cells are not rewritten', (() => {
+    // same position twice → second pass must be a no-op (nothing to restore/apply)
+    const appliedBefore = eH._hoverApplied;
+    eH._hoverAt(35, 8);
+    return eH._hoverApplied.size === appliedBefore.size
+      && [...appliedBefore.keys()].every((sp) => eH._hoverApplied.has(sp));
+  })());
   eH._hoverClear();
+
+  // QA: switching effects never leaves residue (the "stuck on invert" bug class)
+  check('QA: invert residue cleared on effect switch', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed', hoverEffect: 'invert', hoverRadius: 3 });
+    e._grid = grid; e._paint(grid, e._opts);
+    e._hoverAt(20, 5);
+    const hadFilter = (el.children[5].children[20].style.filter || '') !== '';
+    // switch effect → repaint path runs teardown before re-setup
+    e._opts = Object.assign({}, e._opts, { hoverEffect: 'highlight' });
+    e._paint(grid, e._opts);
+    const clean = (el.children[5].children[20].style.filter || '') === ''
+      && (el.children[5].children[20].style.transition || '') === '';
+    e.destroy();
+    return hadFilter && clean;
+  })());
 
   // reveal: base state + hover lift + teardown restore
   const elR = new Element('div'); new Element('div').appendChild(elR);
