@@ -12,6 +12,12 @@ ASCII art generator for interactive article thumbnails/graphics on Prafful's web
 - `presets/` — preset definitions as JSON (Phase 3)
 - `examples/` — sample images + demo embeds for manual testing
 
+## Next milestone
+Playground v2 — editor overhaul + layer compositor. **Full direction in
+UI-SPEC.md — read it before touching playground code.** Process is
+Figma-first: wait for Prafful's Figma file, implement to spec via the Figma
+connection. M1 (state-doc architecture) can start without the design.
+
 ## Current status
 ALL PHASES (1–6) complete — engine v0.5.0. Core pipeline; color/theme/
 dithering; presets (13, seeded noise, glow, ANSI-256); playground (two-column:
