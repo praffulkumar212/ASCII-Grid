@@ -103,96 +103,15 @@
     color: #fff;
   }
   button.primary:hover { background: var(--pg-yellow); color: var(--pg-ink); }
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 24px;
-    min-height: 68px;
-    padding: 0 24px;
-    border-bottom: 3px solid var(--pg-border);
-    background: var(--pg-bg);
-  }
-  .brand {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    color: var(--pg-fg);
-    font-size: 28px;
-    font-weight: 900;
-    line-height: 1;
-    letter-spacing: -.04em;
-    text-transform: uppercase;
-  }
-  .brand-mark {
-    display: inline-grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    background: var(--pg-yellow);
-    border: 2px solid var(--pg-border);
-    border-radius: 4px;
-    color: var(--pg-ink);
-    font: 800 16px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
-  }
-  .topnav, .top-actions, .chip-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .topnav { gap: 20px; }
-  .nav-link {
-    color: var(--pg-fg);
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: .04em;
-    text-decoration: none;
-    text-transform: uppercase;
-  }
-  .nav-link.active {
-    color: var(--pg-blue);
-    text-decoration: underline;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
-  }
-  #themeToggle {
-    width: 48px;
-    padding: 0;
-    font-size: 18px;
-  }
-  .export-anchor {
-    min-width: 104px;
-    background: var(--pg-yellow);
-    color: var(--pg-ink);
-  }
+
   .layout {
     display: grid;
-    grid-template-columns: 276px minmax(420px, 1fr) 340px;
-    min-height: calc(100vh - 68px);
-  }
-  .sidebar, #right {
-    min-width: 0;
-    background: var(--pg-bg);
-  }
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--pg-border);
-    box-shadow: inset -2px 0 0 var(--pg-border);
-  }
-  #left {
-    min-width: 0;
-    padding: 36px;
-    background: var(--pg-panel);
+    grid-template-columns: minmax(0, 1fr) 360px;
+    min-height: 100vh;
   }
   #right {
-    max-height: calc(100vh - 68px);
-    overflow: auto;
-    border-left: 1px solid var(--pg-border);
-    box-shadow: inset 2px 0 0 var(--pg-border);
+    min-width: 0;
+    background: var(--pg-bg);
   }
   .project-card {
     display: grid;
@@ -416,8 +335,8 @@
     display: grid;
     align-items: center;
     justify-items: center;
-    min-height: calc(100vh - 210px);
-    max-height: calc(100vh - 184px);
+    min-height: calc(100vh - 142px);
+    max-height: calc(100vh - 116px);
     overflow: auto;
     padding: 48px;
     border: 3px solid var(--pg-border);
@@ -507,8 +426,7 @@
   }
   .inspector-head {
     position: sticky;
-    top: 0;
-    z-index: 5;
+    top: 0;\n    z-index: 5;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -620,31 +538,12 @@
     font-family: "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, monospace;
     text-transform: uppercase;
   }
-  @media (max-width: 1180px) {
-    .layout { grid-template-columns: 240px minmax(0, 1fr); }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
     #right {
-      grid-column: 1 / -1;
       max-height: none;
       border-left: 0;
       border-top: 3px solid var(--pg-border);
-    }
-    .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 760px) {
-    .topbar {
-      position: static;
-      grid-template-columns: 1fr;
-      align-items: stretch;
-      gap: 12px;
-      padding: 16px;
-    }
-    .brand { font-size: 24px; }
-    .topnav, .top-actions { justify-content: space-between; }
-    .layout { grid-template-columns: 1fr; }
-    .sidebar, #right {
-      max-height: none;
-      border-right: 0;
-      border-left: 0;
     }
     #left { padding: 20px; }
     #preview-wrap {
@@ -652,6 +551,17 @@
       max-height: none;
       padding: 28px 16px;
       box-shadow: none;
+    }
+    #art { width: 100%; min-width: 0; }
+    #art:empty::before {
+      content: "DROP IMAGE\A USE SOURCE INPUT";
+      font-size: 32px;
+      letter-spacing: -0.02em;
+      white-space: pre;
+    }
+    #art:empty::after {
+      font-size: 11px;
+      letter-spacing: 0.08em;
     }
     .controls, .export-row { grid-template-columns: 1fr; }
   }
@@ -665,58 +575,7 @@
 </style>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><span class="brand-mark">A</span> ASCII.ENGINE</div>
-  <nav class="topnav" aria-label="Primary">
-    <a class="nav-link" href="../docs/">Docs</a>
-    <a class="nav-link active" href="./">Playground</a>
-    <a class="nav-link" href="../examples/embed.html">Embed</a>
-  </nav>
-  <div class="top-actions">
-    <button type="button" id="themeToggle" title="Toggle light/dark to test theme adaptation">◐</button>
-    <a href="#export-panel"><button type="button" class="export-anchor">Export</button></a>
-  </div>
-</header>
-
 <div class="layout">
-<aside class="sidebar">
-  <div class="project-card">
-    <div class="project-swatch">A</div>
-    <div>
-      <div class="project-name">Project_Alpha</div>
-      <div class="project-meta">ascii_v2.0</div>
-    </div>
-  </div>
-  <div class="side-nav">
-    <button type="button" class="active">Layers</button>
-    <button type="button">Assets</button>
-    <button type="button">History</button>
-  </div>
-  <section class="side-section">
-    <h2><span class="step">1</span>Source Input</h2>
-    <div id="drop">
-      <div id="dropLabel">Drop an image here, or click to pick a file</div>
-      <img id="thumb" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="" hidden>
-    </div>
-    <input id="file" type="file" accept="image/*" hidden>
-    <div class="input-row">
-      <input id="url" type="text" placeholder="Paste image URL">
-      <button type="button" id="loadUrl">Load</button>
-    </div>
-  </section>
-  <section class="side-section">
-    <h2><span class="step">2</span>Preset Library</h2>
-    <div id="gallery"><p class="hint">Pick an image first. Each preset renders a live thumbnail from your source.</p></div>
-  </section>
-  <div class="side-footer">
-    <button type="button" class="primary" style="width:100%">+ Add_Layer</button>
-    <div class="mini-actions">
-      <button type="button">Help</button>
-      <button type="button">Feedback</button>
-    </div>
-  </div>
-</aside>
-
 <main id="left">
   <div class="workspace-head">
     <div class="workspace-title">Viewport / ASCII canvas</div>
@@ -741,6 +600,24 @@
   <h2>Inspector</h2>
   <span class="chip">DOM</span>
 </div>
+
+<section class="inspector-section">
+<h2><span class="step">1</span>Source Input</h2>
+<div id="drop">
+  <div id="dropLabel">Drop an image here, or click to pick a file</div>
+  <img id="thumb" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="" hidden>
+</div>
+<input id="file" type="file" accept="image/*" hidden>
+<div class="input-row">
+  <input id="url" type="text" placeholder="Paste image URL">
+  <button type="button" id="loadUrl">Load</button>
+</div>
+</section>
+
+<section class="inspector-section">
+<h2><span class="step">2</span>Preset Library</h2>
+<div id="gallery"><p class="hint">Pick an image first. Each preset renders a live thumbnail from your source.</p></div>
+</section>
 
 <section class="inspector-section">
 <h2><span class="step">3</span>Sampling</h2>
@@ -873,11 +750,14 @@
   function status(msg) { $('status').textContent = msg; }
 
   // ── theme toggle ─────────────────────────────────────────────────────────
-  $('themeToggle').addEventListener('click', () => {
-    document.documentElement.classList.toggle('dark');
-    // theme mode re-reads CSS vars automatically; source+blend needs repaint (FIXES.md #7)
-    if (engine) render();
-  });
+  const themeToggle = $('themeToggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+      // theme mode re-reads CSS vars automatically; source+blend needs repaint (FIXES.md #7)
+      if (engine) render();
+    });
+  }
 
   // ── lasso: draw a region, art renders only inside (engine `mask` option) ──
   const lassoBtn = $('lassoBtn'), lassoCv = $('lassoCanvas');
