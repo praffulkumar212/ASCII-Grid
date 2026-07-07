@@ -81,7 +81,27 @@ art until a repaint (plan §5 promises automatic flipping). Options:
 the blend live), or observe theme changes and repaint (cheap — grid is cached).
 Pure `theme` mode is already correct.
 
-## 8. NOTES — no action needed now
+## 8. ENHANCEMENT — hover radius should scale with the image  [OPEN — requested 2026-07-07]
+
+The hover radius must cover **at least 25% of the image**, not a fixed cell
+count. Today `hoverRadius` is absolute (default 4, clamped 1–20 cells): on a
+240-col render, radius 4 is a barely-visible 1.7% of the width; even the max
+(20) is only 8%.
+
+Fix direction:
+- Support relative values: `hoverRadius: '25%'` (of cols) alongside numbers;
+  compute effective radius at hover time from the live grid
+  (`Math.max(minCells, cols * pct)`), so density changes keep it proportional.
+- Make **25% of cols the default floor**: effective radius =
+  `max(hoverRadius, cols * 0.25)` unless the user explicitly opts out.
+- Raise or drop the 20-cell clamp (25% of 240 cols = 60 cells).
+- Perf note: at radius 60 the affected-cell loop is ~60×60÷aspect ≈ 2.2k
+  cells/frame in dom mode — fine with the rAF coalescing, but re-check on a
+  low-end machine; canvas mode unaffected.
+- Update: playground radius slider (switch to % of width), docs table,
+  `data-ascii-hover-radius` parsing ('25%' string), tests.
+
+## 9. NOTES — no action needed now
 
 - Grid cache Map is unbounded; fine at current sizes, revisit if playground
   churns many images (LRU cap ~20).
