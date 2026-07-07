@@ -101,7 +101,25 @@ Fix direction:
 - Update: playground radius slider (switch to % of width), docs table,
   `data-ascii-hover-radius` parsing ('25%' string), tests.
 
-## 9. NOTES — no action needed now
+## 9. ENHANCEMENT — video (MP4) export of animated renders  [OPEN — requested 2026-07-07]
+
+PNG/SVG exports capture a static frame; animated presets (glitch, matrix-rain,
+CRT noise, entrance reveals, ripple) lose their point. Add a "Record video"
+export to the playground.
+
+Fix direction:
+- Render in canvas mode → `canvas.captureStream(30)` + `MediaRecorder`;
+  record a user-chosen duration (default ~4s, loop-friendly for seeded noise:
+  one full seed cycle).
+- Container/codec: `video/webm` (Chrome/Firefox native), `video/mp4` where
+  supported (Safari); label the button by what the browser produces. Optional
+  later: in-browser webm→mp4 via ffmpeg.wasm if strict MP4 is required.
+- For dom-mode configs, temporarily mirror to an offscreen canvas render for
+  the recording, then discard.
+- Playground: duration control + record button in Step 4, disabled when
+  noise/animSpeed are both 0 (nothing moves).
+
+## 10. NOTES — no action needed now
 
 - Grid cache Map is unbounded; fine at current sizes, revisit if playground
   churns many images (LRU cap ~20).
