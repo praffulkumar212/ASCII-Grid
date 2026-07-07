@@ -4,142 +4,746 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ascii-engine playground</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --ascii-fg: #1a1a1a;
     --ascii-bg: transparent;
     --ascii-accent: #4f8cff;
-    --pg-bg: #fafafa; --pg-fg: #1a1a1a; --pg-muted: #888;
-    --pg-card: #fff; --pg-border: #ddd; --pg-active: #4f8cff;
+    --pg-ink: #1a1a1a;
+    --pg-black: #000;
+    --pg-paper: #f5f5f0;
+    --pg-canvas: #fff;
+    --pg-panel: #e8e4da;
+    --pg-divider: #d3cec2;
+    --pg-muted: #6f6c65;
+    --pg-blue: #005cff;
+    --pg-blue-soft: #4f8cff;
+    --pg-yellow: #ffcc00;
+    --pg-red: #ef3b33;
+    --pg-green: #6edb8f;
+    --pg-bg: var(--pg-paper);
+    --pg-fg: var(--pg-ink);
+    --pg-card: var(--pg-canvas);
+    --pg-border: var(--pg-ink);
+    --pg-active: var(--pg-blue);
   }
   html.dark {
     --ascii-fg: #e8e8e8;
-    --pg-bg: #101014; --pg-fg: #e8e8e8; --pg-muted: #999;
-    --pg-card: #17171d; --pg-border: #333; --pg-active: #6ea2ff;
+    --pg-paper: #111;
+    --pg-canvas: #1a1a1a;
+    --pg-panel: #242424;
+    --pg-divider: #3a3a3a;
+    --pg-muted: #b6b1a6;
+    --pg-blue: #4f8cff;
+    --pg-bg: var(--pg-paper);
+    --pg-fg: #f5f5f0;
+    --pg-card: var(--pg-canvas);
+    --pg-border: #f5f5f0;
+    --pg-active: var(--pg-blue);
   }
   * { box-sizing: border-box; }
+  html { background: var(--pg-bg); }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: var(--pg-bg); color: var(--pg-fg);
-    max-width: 1500px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem;
-    transition: background .2s;
+    min-height: 100vh;
+    margin: 0;
+    background: var(--pg-bg);
+    color: var(--pg-fg);
+    font-family: "Space Grotesk", Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    transition: background 150ms ease-out, color 150ms ease-out;
   }
-  /* two-column: preview stays put on the left, controls scroll on the right */
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 30%; gap: 1.5rem; align-items: start; }
-  #left  { position: sticky; top: 1rem; }
-  #right { min-width: 0; }
-  @media (max-width: 900px) {
-    .layout { grid-template-columns: 1fr; }
-    #left { position: static; }
+  h1, h2, h3, p { margin: 0; }
+  h1, h2, h3, button, label, .nav-link, .chip, .tile .name { text-wrap: balance; }
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: .06em;
+    text-transform: uppercase;
   }
-  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem; }
-  h1 { font-size: 1.25rem; margin: 0; }
-  h1 small { color: var(--pg-muted); font-weight: 400; font-size: .8rem; margin-left: .5rem; }
-  h2 { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
-       color: var(--pg-muted); margin: 1.75rem 0 .6rem; }
-  h2 .step { display: inline-block; width: 1.35rem; height: 1.35rem; line-height: 1.35rem; text-align: center;
-             background: var(--pg-active); color: #fff; border-radius: 50%; margin-right: .45rem; font-size: .75rem; }
-  button { padding: .35rem .9rem; cursor: pointer; border: 1px solid var(--pg-border);
-           background: var(--pg-card); color: var(--pg-fg); border-radius: 6px; font-size: .82rem; }
-  button:hover { border-color: var(--pg-active); }
-  button.primary { background: var(--pg-active); border-color: var(--pg-active); color: #fff; }
-
-  /* Step 1 — input */
+  h2 .step {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-yellow);
+    color: var(--pg-ink);
+    font: 700 12px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  }
+  button, input, select { font: inherit; }
+  button {
+    min-height: 40px;
+    padding: 10px 14px;
+    cursor: pointer;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    color: var(--pg-fg);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out, transform 150ms ease-out;
+  }
+  button:hover { background: var(--pg-yellow); color: var(--pg-ink); }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--pg-blue-soft);
+    outline-offset: 2px;
+  }
+  button.primary {
+    background: var(--pg-ink);
+    border-color: var(--pg-ink);
+    color: #fff;
+  }
+  button.primary:hover { background: var(--pg-yellow); color: var(--pg-ink); }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 24px;
+    min-height: 68px;
+    padding: 0 24px;
+    border-bottom: 3px solid var(--pg-border);
+    background: var(--pg-bg);
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--pg-fg);
+    font-size: 28px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -.04em;
+    text-transform: uppercase;
+  }
+  .brand-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    background: var(--pg-yellow);
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    color: var(--pg-ink);
+    font: 800 16px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  }
+  .topnav, .top-actions, .chip-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .topnav { gap: 20px; }
+  .nav-link {
+    color: var(--pg-fg);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .nav-link.active {
+    color: var(--pg-blue);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+  #themeToggle {
+    width: 48px;
+    padding: 0;
+    font-size: 18px;
+  }
+  .export-anchor {
+    min-width: 104px;
+    background: var(--pg-yellow);
+    color: var(--pg-ink);
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 276px minmax(420px, 1fr) 340px;
+    min-height: calc(100vh - 68px);
+  }
+  .sidebar, #right {
+    min-width: 0;
+    background: var(--pg-bg);
+  }
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--pg-border);
+    box-shadow: inset -2px 0 0 var(--pg-border);
+  }
+  #left {
+    min-width: 0;
+    padding: 36px;
+    background: var(--pg-panel);
+  }
+  #right {
+    max-height: calc(100vh - 68px);
+    overflow: auto;
+    border-left: 1px solid var(--pg-border);
+    box-shadow: inset 2px 0 0 var(--pg-border);
+  }
+  .project-card {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 20px 18px;
+    border-bottom: 1px solid var(--pg-divider);
+  }
+  .project-swatch {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-red);
+    color: #fff;
+    font: 800 20px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  }
+  .project-name {
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .project-meta {
+    margin-top: 4px;
+    color: var(--pg-muted);
+    font: 700 11px/1.2 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase;
+  }
+  .side-nav { border-bottom: 1px solid var(--pg-divider); }
+  .side-nav button {
+    width: calc(100% - 28px);
+    margin: 12px 14px;
+    text-align: left;
+  }
+  .side-nav .active {
+    background: var(--pg-blue);
+    color: #fff;
+    box-shadow: 3px 3px 0 var(--pg-ink);
+  }
+  .side-section {
+    padding: 18px;
+    border-bottom: 1px solid var(--pg-divider);
+  }
+  .side-section h2, .inspector-section h2 { margin-bottom: 12px; }
+  .side-footer {
+    margin-top: auto;
+    padding: 14px 18px 18px;
+    border-top: 3px solid var(--pg-border);
+    background: var(--pg-yellow);
+  }
+  .mini-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .mini-actions button {
+    min-height: 36px;
+    padding: 8px;
+    background: var(--pg-card);
+    font-size: 10px;
+  }
   #drop {
-    border: 2px dashed var(--pg-border); border-radius: 10px; padding: 2rem 1rem;
-    text-align: center; color: var(--pg-muted); cursor: pointer; transition: border-color .15s;
+    display: grid;
+    place-items: center;
+    min-height: 192px;
+    padding: 22px 14px;
+    border: 2px dashed var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    text-align: center;
+    color: var(--pg-fg);
+    cursor: pointer;
+    transition: background 150ms ease-out, border-color 150ms ease-out;
   }
-  #drop.over { border-color: var(--pg-active); color: var(--pg-active); }
-  #drop img { max-height: 90px; max-width: 200px; display: block; margin: .6rem auto 0; border-radius: 6px; }
-  .input-row { display: flex; gap: .5rem; margin-top: .6rem; }
-  .input-row input[type=text] { flex: 1; padding: .4rem .6rem; border: 1px solid var(--pg-border);
-    border-radius: 6px; background: var(--pg-card); color: var(--pg-fg); font-size: .82rem; }
-
-  /* Step 2 — gallery */
-  #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .6rem; }
-  .tile { border: 2px solid var(--pg-border); border-radius: 8px; background: var(--pg-card);
-          cursor: pointer; overflow: hidden; padding: 0; text-align: left; }
-  .tile.active { border-color: var(--pg-active); }
-  .tile .mini { height: 92px; overflow: hidden; pointer-events: none; padding: 4px;
-                display: flex; align-items: center; justify-content: center; }
+  #drop::before {
+    content: "UPLOAD";
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 18px;
+    background: var(--pg-ink);
+    color: #fff;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    font: 800 11px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  }
+  #drop.over {
+    background: var(--pg-yellow);
+    border-style: solid;
+  }
+  #dropLabel {
+    max-width: 210px;
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.05;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+  }
+  #drop img {
+    max-height: 92px;
+    max-width: 180px;
+    display: block;
+    margin: 14px auto 0;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+  }
+  .input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .input-row input[type=text] {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    color: var(--pg-fg);
+    font: 600 12px/1.3 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  }
+  .input-row input::placeholder {
+    color: var(--pg-muted);
+    opacity: 1;
+  }
+  #gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .tile {
+    min-height: 132px;
+    overflow: hidden;
+    padding: 0;
+    cursor: pointer;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    text-align: left;
+  }
+  .tile:hover { background: var(--pg-panel); }
+  .tile.active {
+    background: var(--pg-yellow);
+    color: var(--pg-ink);
+    box-shadow: 3px 3px 0 var(--pg-ink);
+  }
+  .tile .mini {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 92px;
+    overflow: hidden;
+    padding: 6px;
+    pointer-events: none;
+    border-bottom: 2px solid var(--pg-border);
+    background: var(--pg-canvas);
+  }
   .tile .mini > div { width: 100%; }
-  .tile .name { display: block; font-size: .72rem; padding: .3rem .5rem .4rem; color: var(--pg-fg); }
-  .tile .name em { color: var(--pg-muted); font-style: normal; }
-
-  /* Step 3 — tune (single column inside the narrow panel) */
-  .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .4rem 1rem; }
-  .controls label { display: block; font-size: .78rem; margin: .3rem 0 .1rem; color: var(--pg-fg); }
-  .controls label span.val { color: var(--pg-muted); }
-  .controls input[type=range] { width: 100%; }
-  .controls select, .controls input[type=text] { width: 100%; padding: .3rem .5rem; font-size: .8rem;
-    border: 1px solid var(--pg-border); border-radius: 6px; background: var(--pg-card); color: var(--pg-fg); }
-
-  /* preview */
-  #preview-wrap { position: relative; border: 1px solid var(--pg-border); border-radius: 10px;
-                  background: var(--pg-card); padding: 1rem; min-height: 60vh;
-                  max-height: calc(100vh - 7rem); overflow: auto; }
-  #fsBtn { position: absolute; top: .6rem; right: .6rem; z-index: 2; padding: .25rem .6rem;
-           font-size: .78rem; opacity: .75; }
-  #fsBtn:hover { opacity: 1; }
-  #lassoBtn { position: absolute; top: .6rem; left: .6rem; z-index: 2; padding: .25rem .6rem;
-              font-size: .78rem; opacity: .75; }
-  #lassoBtn:hover { opacity: 1; }
-  #lassoBtn.active { border-color: var(--pg-active); color: var(--pg-active); opacity: 1; }
-  #lassoCanvas { position: absolute; z-index: 3; cursor: crosshair; touch-action: none; display: none; }
-  #preview-wrap:fullscreen { max-height: none; border: none; border-radius: 0;
-                             display: flex; align-items: center; justify-content: center;
-                             background: var(--pg-bg); }
+  .tile .name {
+    display: block;
+    padding: 8px;
+    color: inherit;
+    font-size: 10px;
+    line-height: 1.1;
+    word-break: break-word;
+  }
+  .tile .name em {
+    color: var(--pg-muted);
+    font-style: normal;
+  }
+  .hint {
+    color: var(--pg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .workspace-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .workspace-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    padding: 6px 10px;
+    border: 1px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    color: var(--pg-fg);
+    font: 700 11px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase;
+  }
+  .chip::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--pg-green);
+  }
+  #preview-wrap {
+    position: relative;
+    display: grid;
+    align-items: center;
+    justify-items: center;
+    min-height: calc(100vh - 210px);
+    max-height: calc(100vh - 184px);
+    overflow: auto;
+    padding: 48px;
+    border: 3px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-canvas);
+    box-shadow: 5px 5px 0 var(--pg-ink);
+  }
+  #art {
+    display: grid;
+    align-content: center;
+    width: min(100%, 920px);
+    min-height: 320px;
+  }
+  #art:empty::before {
+    content: "DROP AN IMAGE HERE\A OR USE SOURCE INPUT";
+    display: block;
+    color: var(--pg-ink);
+    font-size: clamp(36px, 6vw, 72px);
+    font-weight: 900;
+    line-height: .98;
+    letter-spacing: -.04em;
+    text-align: center;
+    text-transform: uppercase;
+    white-space: pre;
+  }
+  #art:empty::after {
+    content: "SUPPORTED: JPG / PNG / WEBP / SVG";
+    display: block;
+    margin-top: 22px;
+    color: var(--pg-muted);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-align: center;
+  }
+  #fsBtn, #lassoBtn {
+    position: absolute;
+    z-index: 2;
+    min-height: 36px;
+    padding: 8px 12px;
+    background: var(--pg-card);
+    font-size: 11px;
+  }
+  #fsBtn { right: 16px; bottom: 16px; }
+  #lassoBtn { left: 16px; top: 16px; }
+  #lassoBtn.active {
+    background: var(--pg-blue);
+    border-color: var(--pg-border);
+    color: #fff;
+  }
+  #lassoCanvas {
+    position: absolute;
+    z-index: 3;
+    display: none;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  #preview-wrap:fullscreen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    background: var(--pg-bg);
+  }
   #preview-wrap:fullscreen #art { width: min(96vw, 1800px); }
-  #status { font-size: .75rem; color: var(--pg-muted); margin-top: .4rem; min-height: 1.1em; }
-
-  /* Step 4 — export */
-  .export-row { display: flex; flex-wrap: wrap; gap: .5rem; }
-  #snippet { width: 100%; font-family: ui-monospace, monospace; font-size: .72rem; padding: .6rem;
-             border: 1px solid var(--pg-border); border-radius: 8px; background: var(--pg-card);
-             color: var(--pg-fg); white-space: pre; overflow-x: auto; margin-top: .6rem; display: none; }
-  .hint { font-size: .74rem; color: var(--pg-muted); margin-top: .35rem; }
+  .statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 18px;
+  }
+  #status {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-height: 32px;
+    padding: 8px 12px;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-ink);
+    color: #fff;
+    font: 700 11px/1.3 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase;
+  }
+  .inspector-head {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 2px solid var(--pg-border);
+    background: var(--pg-ink);
+    color: #fff;
+  }
+  .inspector-head h2 { color: #fff; }
+  .inspector-section {
+    padding: 20px 24px 24px;
+    border-bottom: 2px solid var(--pg-border);
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .controls > div {
+    display: grid;
+    gap: 6px;
+  }
+  .controls label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--pg-fg);
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1.2;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .controls label span.val {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 3px 6px;
+    border: 1px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    color: var(--pg-fg);
+    font: 700 11px/1 "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+  }
+  .controls input[type=range] {
+    width: 100%;
+    accent-color: var(--pg-yellow);
+  }
+  .controls select,
+  .controls input[type=text],
+  .controls input[type=color] {
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 10px;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    color: var(--pg-fg);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .controls input[type=text] {
+    font-family: "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    text-transform: none;
+  }
+  .controls input[type=checkbox] {
+    width: 18px !important;
+    height: 18px;
+    accent-color: var(--pg-blue);
+  }
+  .controls em {
+    color: var(--pg-muted);
+    font-style: normal;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .export-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .export-row button {
+    min-height: 64px;
+    text-align: left;
+  }
+  .export-row .primary {
+    grid-column: 1 / -1;
+    background: var(--pg-blue);
+    color: #fff;
+  }
+  #snippet {
+    display: none;
+    width: 100%;
+    margin-top: 14px;
+    padding: 14px;
+    overflow-x: auto;
+    border: 2px solid var(--pg-border);
+    border-radius: 4px;
+    background: var(--pg-card);
+    color: var(--pg-fg);
+    font: 600 12px/1.45 "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre;
+  }
+  #ex-hint {
+    min-height: 18px;
+    margin-top: 10px;
+    font-family: "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    text-transform: uppercase;
+  }
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: 240px minmax(0, 1fr); }
+    #right {
+      grid-column: 1 / -1;
+      max-height: none;
+      border-left: 0;
+      border-top: 3px solid var(--pg-border);
+    }
+    .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .topbar {
+      position: static;
+      grid-template-columns: 1fr;
+      align-items: stretch;
+      gap: 12px;
+      padding: 16px;
+    }
+    .brand { font-size: 24px; }
+    .topnav, .top-actions { justify-content: space-between; }
+    .layout { grid-template-columns: 1fr; }
+    .sidebar, #right {
+      max-height: none;
+      border-right: 0;
+      border-left: 0;
+    }
+    #left { padding: 20px; }
+    #preview-wrap {
+      min-height: 58vh;
+      max-height: none;
+      padding: 28px 16px;
+      box-shadow: none;
+    }
+    .controls, .export-row { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: .01ms !important;
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>ascii-engine playground <small>image → preset → tune → embed</small></h1>
-  <button id="themeToggle" title="Toggle light/dark to test theme adaptation">◐ theme</button>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">A</span> ASCII.ENGINE</div>
+  <nav class="topnav" aria-label="Primary">
+    <a class="nav-link" href="../docs/">Docs</a>
+    <a class="nav-link active" href="./">Playground</a>
+    <a class="nav-link" href="../examples/embed.html">Embed</a>
+  </nav>
+  <div class="top-actions">
+    <button type="button" id="themeToggle" title="Toggle light/dark to test theme adaptation">◐</button>
+    <a href="#export-panel"><button type="button" class="export-anchor">Export</button></a>
+  </div>
 </header>
 
 <div class="layout">
+<aside class="sidebar">
+  <div class="project-card">
+    <div class="project-swatch">A</div>
+    <div>
+      <div class="project-name">Project_Alpha</div>
+      <div class="project-meta">ascii_v2.0</div>
+    </div>
+  </div>
+  <div class="side-nav">
+    <button type="button" class="active">Layers</button>
+    <button type="button">Assets</button>
+    <button type="button">History</button>
+  </div>
+  <section class="side-section">
+    <h2><span class="step">1</span>Source Input</h2>
+    <div id="drop">
+      <div id="dropLabel">Drop an image here, or click to pick a file</div>
+      <img id="thumb" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="" hidden>
+    </div>
+    <input id="file" type="file" accept="image/*" hidden>
+    <div class="input-row">
+      <input id="url" type="text" placeholder="Paste image URL">
+      <button type="button" id="loadUrl">Load</button>
+    </div>
+  </section>
+  <section class="side-section">
+    <h2><span class="step">2</span>Preset Library</h2>
+    <div id="gallery"><p class="hint">Pick an image first. Each preset renders a live thumbnail from your source.</p></div>
+  </section>
+  <div class="side-footer">
+    <button type="button" class="primary" style="width:100%">+ Add_Layer</button>
+    <div class="mini-actions">
+      <button type="button">Help</button>
+      <button type="button">Feedback</button>
+    </div>
+  </div>
+</aside>
 
-<!-- ══ LEFT: preview ══ -->
 <main id="left">
+  <div class="workspace-head">
+    <div class="workspace-title">Viewport / ASCII canvas</div>
+    <div class="chip-row">
+      <span class="chip">System_ready</span>
+      <span class="chip">v0.6.2</span>
+    </div>
+  </div>
   <div id="preview-wrap">
-    <button id="lassoBtn" title="Draw a region — art renders only inside it">◌ Lasso</button>
-    <button id="fsBtn" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+    <button type="button" id="lassoBtn" title="Draw a region — art renders only inside it">◌ Lasso</button>
+    <button type="button" id="fsBtn" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
     <canvas id="lassoCanvas"></canvas>
     <div id="art"></div>
   </div>
-  <div id="status">No image yet.</div>
+  <div class="statusbar">
+    <div id="status">No image yet.</div>
+  </div>
 </main>
 
-<!-- ══ RIGHT: controls ══ -->
 <aside id="right">
-
-<!-- ── Step 1 ── -->
-<h2 style="margin-top:0"><span class="step">1</span>Image</h2>
-<div id="drop">
-  <div id="dropLabel">Drop an image here, or click to pick a file</div>
-  <img id="thumb" alt="" hidden>
-</div>
-<input id="file" type="file" accept="image/*" hidden>
-<div class="input-row">
-  <input id="url" type="text" placeholder="…or paste an image URL and press Enter">
-  <button id="loadUrl">Load URL</button>
+<div class="inspector-head">
+  <h2>Inspector</h2>
+  <span class="chip">DOM</span>
 </div>
 
-<!-- ── Step 2 ── -->
-<h2><span class="step">2</span>Style — live previews of <em>your</em> image</h2>
-<div id="gallery"><p class="hint">Pick an image first — each preset renders a live thumbnail of it.</p></div>
-
-<!-- ── Step 3 ── -->
-<h2><span class="step">3</span>Tune</h2>
+<section class="inspector-section">
+<h2><span class="step">3</span>Sampling</h2>
 <div class="controls">
   <div><label>Density <span class="val" id="v-density">62%</span></label>
     <input type="range" id="c-density" min="0" max="100" value="62"></div>
@@ -173,29 +777,23 @@
       <option value="theme">Theme (CSS vars)</option>
       <option value="source">Source (image RGB)</option>
     </select></div>
-  <div><label>Render mode <span class="val">(canvas = fastest for high density)</span></label>
+  <div><label>Render mode <span class="val">(canvas = fastest)</span></label>
     <select id="c-renderMode">
       <option value="dom">DOM (interactive)</option>
       <option value="canvas">Canvas (fast, hover=highlight)</option>
       <option value="pre">Pre (plain text)</option>
     </select></div>
-  <div><label>Entrance animation <span class="val">(plays on render)</span></label>
+  <div><label>Entrance animation <span class="val">(on render)</span></label>
     <select id="c-entrance">
       <option value="none">None</option>
       <option value="typing">Typing reveal</option>
       <option value="fade">Fade per cell</option>
     </select></div>
-  <div><label>Alt text (required for accessibility)</label>
-    <input type="text" id="c-alt" placeholder="Describe the image…"></div>
-  <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
-    <input type="checkbox" id="c-autoContrast" style="width:auto"> Auto contrast
-    <span class="val">(percentile stretch)</span></label></div>
-  <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
-    <input type="checkbox" id="c-maskBackground" style="width:auto"> Remove background
-    <span class="val">(flat-color bg → empty)</span></label></div>
-  <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
-    <input type="checkbox" id="c-maskInvert" style="width:auto"> Invert mask
-    <span class="val">(art outside the lasso)</span></label></div>
+  <div><label>Alt text</label>
+    <input type="text" id="c-alt" placeholder="Describe the image"></div>
+  <div><label><input type="checkbox" id="c-autoContrast"> Auto contrast <span class="val">stretch</span></label></div>
+  <div><label><input type="checkbox" id="c-maskBackground"> Remove background <span class="val">flat bg</span></label></div>
+  <div><label><input type="checkbox" id="c-maskInvert"> Invert mask <span class="val">outside</span></label></div>
   <div><label>Masked area shows</label>
     <select id="c-maskFill">
       <option value="none">Nothing (empty)</option>
@@ -203,8 +801,8 @@
       <option value="color">Flat color ↓</option>
     </select></div>
   <div><label>Mask fill color</label>
-    <input type="color" id="c-maskFillColor" value="#14141c" style="width:100%;height:2rem;padding:.1rem"></div>
-  <div><label>Hover effect <span class="val">(move cursor over art)</span></label>
+    <input type="color" id="c-maskFillColor" value="#14141c"></div>
+  <div><label>Hover effect <span class="val">(cursor)</span></label>
     <select id="c-hoverEffect">
       <option value="none">None</option>
       <option value="highlight">Highlight</option>
@@ -214,7 +812,7 @@
       <option value="magnify">Magnify</option>
       <option value="reveal">Reveal on hover</option>
     </select></div>
-  <div><label>Hover radius <span class="val" id="v-hoverRadius">25%</span> <em style="font-size:.72rem;color:var(--pg-muted)">of image width</em></label>
+  <div><label>Hover radius <span class="val" id="v-hoverRadius">25%</span></label>
     <input type="range" id="c-hoverRadius" min="5" max="60" value="25"></div>
   <div><label>Transition duration <span class="val" id="v-hoverDuration">150ms</span></label>
     <input type="range" id="c-hoverDuration" min="0" max="600" step="10" value="150"></div>
@@ -223,7 +821,7 @@
       <option value="ease-out">ease-out</option>
       <option value="ease-in-out">ease-in-out</option>
       <option value="linear">linear</option>
-      <option value="cubic-bezier(.2,.9,.3,1.4)">springy</option>
+      <option value="cubic-bezier(.25,1,.5,1)">ease-out-quart</option>
     </select></div>
   <div><label>Falloff</label>
     <select id="c-hoverFalloff">
@@ -232,18 +830,20 @@
       <option value="none">None (uniform)</option>
     </select></div>
 </div>
+</section>
 
-<!-- ── Step 4 ── -->
-<h2><span class="step">4</span>Export</h2>
+<section class="inspector-section" id="export-panel">
+<h2><span class="step">4</span>Export Artwork</h2>
 <div class="export-row">
-  <button class="primary" id="ex-snippet">Copy embed snippet</button>
-  <button id="ex-json">Download config JSON</button>
-  <button id="ex-svg">Download SVG</button>
-  <button id="ex-png">Download PNG</button>
-  <button id="ex-text">Copy raw text</button>
+  <button type="button" class="primary" id="ex-snippet">Copy embed snippet</button>
+  <button type="button" id="ex-json">Download JSON</button>
+  <button type="button" id="ex-svg">Download SVG</button>
+  <button type="button" id="ex-png">Download PNG</button>
+  <button type="button" id="ex-text">Copy raw text</button>
 </div>
 <pre id="snippet"></pre>
 <p class="hint" id="ex-hint"></p>
+</section>
 
 </aside><!-- /#right -->
 </div><!-- /.layout -->
