@@ -180,8 +180,8 @@
       <option value="magnify">Magnify</option>
       <option value="reveal">Reveal on hover</option>
     </select></div>
-  <div><label>Hover radius <span class="val" id="v-hoverRadius">4</span></label>
-    <input type="range" id="c-hoverRadius" min="1" max="12" value="4"></div>
+  <div><label>Hover radius <span class="val" id="v-hoverRadius">25%</span> <em style="font-size:.72rem;color:var(--pg-muted)">of image width</em></label>
+    <input type="range" id="c-hoverRadius" min="5" max="60" value="25"></div>
   <div><label>Transition duration <span class="val" id="v-hoverDuration">150ms</span></label>
     <input type="range" id="c-hoverDuration" min="0" max="600" step="10" value="150"></div>
   <div><label>Easing</label>
@@ -309,16 +309,18 @@
 
   // ── Step 3: tune ─────────────────────────────────────────────────────────
   function sliderToOpt(key, val) {
+    if (key === 'hoverRadius') return val + '%'; // relative to image width (FIXES.md #8)
     val = Number(val);
     return AS_FRACTION.has(key) ? val / 100 : val;
   }
   function optToSlider(key, val) {
+    if (key === 'hoverRadius') return parseInt(val, 10) || 25; // '25%' → 25
     return AS_FRACTION.has(key) ? Math.round(val * 100) : val;
   }
   function fmt(key, val) {
     if (key === 'gamma') return Number(val).toFixed(1);
     if (key === 'hoverDuration') return val + 'ms';
-    if (key === 'hoverRadius') return val;
+    if (key === 'hoverRadius') return val + '%';
     return val + (PCT.has(key) ? '%' : '');
   }
 

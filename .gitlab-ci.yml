@@ -1,0 +1,22 @@
+# Test on every push; deploy playground+docs to GitLab Pages from main.
+stages: [test, deploy]
+
+test:
+  stage: test
+  image: node:20-alpine
+  script:
+    - node test/engine.test.js
+
+pages:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - mkdir -p public
+    - cp -r playground docs dist src presets examples public/
+    # root → playground redirect
+    - printf '<!DOCTYPE html><meta http-equiv="refresh" content="0; url=playground/"><a href="playground/">ascii-engine playground</a>' > public/index.html
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

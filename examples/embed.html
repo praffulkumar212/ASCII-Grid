@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ascii-engine — embed test (dist build, declarative API)</title>
+<style>
+  /* Simulates a real article page: theme vars + light/dark. */
+  :root { --ascii-fg: #1a1a1a; --ascii-bg: transparent; --ascii-accent: #e8590c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ascii-fg: #e8e8e8; }
+    body { background: #101014; color: #e8e8e8; }
+  }
+  body { font-family: Georgia, serif; max-width: 720px; margin: 0 auto; padding: 2rem 1rem 60vh; line-height: 1.7; }
+  h1 { font-family: -apple-system, sans-serif; }
+  p.meta { color: #888; font-size: .85rem; font-family: -apple-system, sans-serif; }
+  .embed { margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>Embed test — exactly what an article does</h1>
+<p class="meta">This page uses <strong>dist/ascii-engine.min.js</strong> + the declarative
+<code>data-ascii-*</code> API only — no custom JS. Verify: art renders, adapts to
+light/dark, hover works (25% radius), entrance plays when you scroll to the last one.</p>
+
+<p>Some article text before the first embed. The div below is a straight paste
+from the playground's "Copy embed snippet" button.</p>
+
+<!-- 1: default preset, hover highlight -->
+<div class="embed"
+     data-ascii-src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+     data-ascii-preset="theme-adaptive"
+     data-ascii-hover="highlight"
+     data-ascii-alt="Test render: dice on a transparent background, theme-adaptive preset"></div>
+
+<p>More article prose between embeds, because a real page has flow text.
+The second embed exercises a colored preset plus a config override.</p>
+
+<!-- 2: preset + JSON config override, ripple on click -->
+<div class="embed"
+     data-ascii-src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+     data-ascii-preset="crt"
+     data-ascii-config='{"glow":70,"density":50}'
+     data-ascii-hover="ripple"
+     data-ascii-alt="Test render: CRT preset with boosted glow, click for ripple"></div>
+
+<p>Scroll down — the last embed should be revealed with a typing entrance when
+it enters the viewport (static if you have reduced motion enabled).</p>
+
+<div style="height:80vh"></div>
+
+<!-- 3: entrance animation, source color -->
+<div class="embed"
+     data-ascii-src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+     data-ascii-preset="blocks"
+     data-ascii-entrance="typing"
+     data-ascii-hover="magnify"
+     data-ascii-alt="Test render: blocks preset in source color with typing entrance"></div>
+
+<p>End of test page.</p>
+
+<script src="../dist/ascii-engine.min.js" defer></script>
+</body>
+</html>

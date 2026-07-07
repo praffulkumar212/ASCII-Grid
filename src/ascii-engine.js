@@ -4,7 +4,7 @@
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
  * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
  *         dot-count-ordered braille, Sobel edge blend, tone-before-dither
- * Phase 3: preset system (13 presets, README §9 formulas), seeded noise
+ * Phase 3: preset system (13 presets, PLAN.md §9 formulas), seeded noise
  *          animation (mulberry32), glow, ANSI-256 color quantization.
  *          Canonical preset data also lives in presets/presets.json — keep in
  *          sync (enforced by test/engine.test.js).
@@ -14,7 +14,7 @@
  *          fallback, reduced-motion respected. DOM mode only; style-only —
  *          the cached grid and pipeline are never touched.
  * Phase 6 (v0.5.0): entrance animations (typing/fade via IntersectionObserver,
- *          README §11), canvas render mode for large/animated grids (hover =
+ *          PLAN.md §11), canvas render mode for large/animated grids (hover =
  *          highlight semantics via hit-testing), perf: in-place span patching
  *          on non-structural repaints, O(k) noise sampling, rAF-coalesced
  *          hover, >10k-glyph dom warning.
@@ -55,7 +55,7 @@
 
   // ─── Presets (Phase 3) ─────────────────────────────────────────────────────
   // Named bundles of options. Attribute % values map to concrete formulas per
-  // README §9. Canonical copy: presets/presets.json (test-enforced sync).
+  // PLAN.md §9. Canonical copy: presets/presets.json (test-enforced sync).
   // A preset is a *baseline*: options the user passes explicitly always win.
 
   const PRESETS = {
@@ -74,7 +74,7 @@
     'ansi-256':       { density: 70, contrast: 55, charset: 'classic',  colorMode: 'source', colorQuant: 'ansi256' },
   };
 
-  // ─── Seeded RNG — mulberry32 (README §2: reproducible randomness) ─────────
+  // ─── Seeded RNG — mulberry32 (PLAN.md §2: reproducible randomness) ─────────
   function mulberry32(seed) {
     let a = seed >>> 0;
     return function () {
@@ -103,7 +103,7 @@
     return grayDist < cubeDist ? [gv, gv, gv] : [cr, cg, cb];
   }
 
-  // ─── Hover effects (Phase 5, README §8) ────────────────────────────────────
+  // ─── Hover effects (Phase 5, PLAN.md §8) ────────────────────────────────────
 
   const HOVER_EFFECTS = ['highlight', 'ripple', 'invert', 'pulse', 'magnify', 'reveal'];
 
@@ -114,6 +114,20 @@
     const x = radius === 0 ? 0 : d / radius;
     if (mode === 'linear') return 1 - x;
     return 0.5 + 0.5 * Math.cos(Math.PI * x); // 'smooth' (cosine)
+  }
+
+  // FIXES.md #8: hover radius scales with the image. Accepts 'N%' (of cols,
+  // the default — '25%') or an absolute cell count. Resolved against the live
+  // grid at hover time, so density changes keep it proportional.
+  function effectiveHoverRadius(hoverRadius, cols) {
+    if (typeof hoverRadius === 'string') {
+      const m = hoverRadius.match(/^([\d.]+)\s*%$/);
+      if (m) return Math.max(1, Math.round(cols * Math.min(100, parseFloat(m[1])) / 100));
+      const n = parseFloat(hoverRadius);
+      if (!isNaN(n)) return Math.max(1, Math.round(n));
+      return Math.max(1, Math.round(cols * 0.25));
+    }
+    return Math.max(1, Math.round(hoverRadius));
   }
 
   function resolveAccent(el) {
@@ -139,7 +153,7 @@
       && window.matchMedia('(pointer: coarse)').matches);
   }
 
-  // README §9 formulas for animated effects.
+  // PLAN.md §9 formulas for animated effects.
   function noiseProbability(noisePct) { return (noisePct / 100) * 0.35; }
   function tickInterval(animSpeedPct) {
     if (!(animSpeedPct > 0)) return Infinity;
@@ -420,7 +434,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
   // ─── Edge detection (Sobel) — FIXES.md #5 ──────────────────────────────────
   // Blends the brightness grid toward inverted edge magnitude: edges → dark
-  // glyphs, flat areas → space. amount 0..1 (README §9: Sobel layer opacity).
+  // glyphs, flat areas → space. amount 0..1 (PLAN.md §9: Sobel layer opacity).
 
   function normalizeEdgeBlend(e) {
     e = +e || 0;
@@ -652,11 +666,15 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
           }
           return h;
         })(raw.hoverEffect),
-        hoverRadius:   raw.hoverRadius   != null ? Math.max(1, Math.min(20, Number(raw.hoverRadius))) : 4,
+        // FIXES.md #8: relative by default ('25%' of cols); explicit numbers
+        // are respected as absolute cells. Resolved at hover time.
+        hoverRadius:   raw.hoverRadius != null
+          ? (typeof raw.hoverRadius === 'string' ? raw.hoverRadius : Math.max(1, Number(raw.hoverRadius)))
+          : '25%',
         hoverDuration: raw.hoverDuration != null ? Math.max(0, Number(raw.hoverDuration)) : 150,
         hoverEasing:   raw.hoverEasing   || 'ease-out',
         hoverFalloff:  ['none', 'linear', 'smooth'].indexOf(raw.hoverFalloff) !== -1 ? raw.hoverFalloff : 'smooth',
-        // Phase 6 — entrance animations (README §11)
+        // Phase 6 — entrance animations (PLAN.md §11)
         entrance:      ['typing', 'fade'].indexOf(raw.entrance) !== -1 ? raw.entrance : null,
         entranceDuration: raw.entranceDuration != null ? Math.max(0, Number(raw.entranceDuration)) : 900,
       };
@@ -740,7 +758,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     // ── Canvas render mode (Phase 6) ───────────────────────────────────────
-    // Opt-in for large/animated grids (README §4): one draw call per cell, no
+    // Opt-in for large/animated grids (PLAN.md §4): one draw call per cell, no
     // DOM nodes. Hover is supported via coordinate hit-testing (highlight
     // semantics for all effects except ripple). Glow via ctx.shadowBlur.
     _renderCanvas(grid, opts) {
@@ -826,7 +844,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._paintGrid = grid;
     }
 
-    // Glow (README §9: text-shadow 0 0 pct×12px currentColor, layered ×2 >60%)
+    // Glow (PLAN.md §9: text-shadow 0 0 pct×12px currentColor, layered ×2 >60%)
     // + preset color overrides as inline --ascii-* CSS vars, so theme mode and
     // hover effects (Phase 5, --ascii-accent) keep working unchanged.
     _applyEffectStyles(opts) {
@@ -999,10 +1017,10 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     // ── Noise animation (Phase 3) ──────────────────────────────────────────
-    // Seeded, reproducible glyph corruption (README §9: per-tick cell-flip
+    // Seeded, reproducible glyph corruption (PLAN.md §9: per-tick cell-flip
     // probability 0→0.35). Style-only — the cached grid and pipeline are never
     // touched. Under prefers-reduced-motion the static clean frame stays
-    // (README §6: animated presets render their static final frame).
+    // (PLAN.md §6: animated presets render their static final frame).
 
     _startEffects() {
       this._stopEffects();
@@ -1084,7 +1102,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._ro.observe(this._el.parentElement || this._el);
     }
 
-    // ── Entrance animations (Phase 6, README §11) ──────────────────────────
+    // ── Entrance animations (Phase 6, PLAN.md §11) ──────────────────────────
     // typing = row-major batched reveal; fade = per-cell staggered opacity.
     // Triggered by IntersectionObserver; static frame under reduced motion or
     // when IO is unavailable. DOM mode only (canvas/pre render statically).
@@ -1142,7 +1160,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
     // ── Hover system (Phase 5) ─────────────────────────────────────────────
     // Pure CSS/JS on top of day-one data-cell attrs — zero pipeline changes.
-    // Pointer events cover mouse AND touch-drag (README §8 touch fallback);
+    // Pointer events cover mouse AND touch-drag (PLAN.md §8 touch fallback);
     // coarse-pointer devices additionally get a slow ambient auto-animation,
     // skipped under prefers-reduced-motion.
 
@@ -1262,7 +1280,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         if (this._canvasHoverPrev) for (const i of this._canvasHoverPrev) m.drawCell(i, null, null);
         const affected = [];
         const accent = resolveAccent(this._el);
-        const radius = o.hoverRadius, aspect = o.glyphAspect || GLYPH_ASPECT;
+        const radius = effectiveHoverRadius(o.hoverRadius, m.cols);
+        const aspect = o.glyphAspect || GLYPH_ASPECT;
         const rSpan = Math.ceil(radius / aspect) + 1;
         for (let r = Math.max(0, r0 - rSpan); r <= Math.min(m.rows - 1, r0 + rSpan); r++) {
           for (let c = Math.max(0, c0 - radius); c <= Math.min(m.cols - 1, c0 + radius); c++) {
@@ -1280,7 +1299,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       if (!this._spans || !this._hoverSaved) return;
       this._hoverClear();
       const accent = resolveAccent(this._el);
-      const radius = o.hoverRadius;
+      const radius = effectiveHoverRadius(o.hoverRadius, grid.cols);
       const aspect = o.glyphAspect || GLYPH_ASPECT; // rows are ~aspect× taller than cols
       const rSpan  = Math.ceil(radius / aspect) + 1;
 
@@ -1324,38 +1343,44 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     // Expanding ring: accent flash reaches each cell after a distance-
-    // proportional delay, then restores.
+    // proportional delay, then restores. Cells are batched per integer
+    // distance ring (2 timers per ring, not 2 per cell) so large relative
+    // radii (FIXES.md #8) don't spawn thousands of timeouts.
     _rippleAt(c0, r0) {
       const o = this._opts, grid = this._grid;
       if (!grid || !this._spans || prefersReducedMotion()) return;
       const accent = resolveAccent(this._el);
-      const radius = o.hoverRadius * 2; // rings read better a bit wider
+      const radius = effectiveHoverRadius(o.hoverRadius, grid.cols);
       const aspect = o.glyphAspect || GLYPH_ASPECT;
-      const perCell = Math.max(20, o.hoverDuration / radius);
+      const perRing = Math.max(8, o.hoverDuration / radius);
       const rSpan = Math.ceil(radius / aspect) + 1;
 
+      const rings = new Map(); // integer distance → spans
       for (let r = Math.max(0, r0 - rSpan); r <= Math.min(grid.rows - 1, r0 + rSpan); r++) {
         for (let c = Math.max(0, c0 - radius); c <= Math.min(grid.cols - 1, c0 + radius); c++) {
           const dx = c - c0, dy = (r - r0) * aspect;
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d > radius) continue;
-          const sp = this._spans[r * grid.cols + c];
-          if (!sp) continue;
-          const delay = Math.round(d * perCell);
+          const key = Math.round(d);
+          if (!rings.has(key)) rings.set(key, []);
+          rings.get(key).push(this._spans[r * grid.cols + c]);
+        }
+      }
+      for (const [ring, spans] of rings) {
+        this._rippleTimers.push(setTimeout(() => {
+          for (const sp of spans) { this._saveSpan(sp); sp.style.color = accent; }
           this._rippleTimers.push(setTimeout(() => {
-            this._saveSpan(sp);
-            sp.style.color = accent;
-            this._rippleTimers.push(setTimeout(() => {
+            for (const sp of spans) {
               const s = this._hoverSaved && this._hoverSaved.get(sp);
               if (s) { sp.style.color = s.color; this._hoverSaved.delete(sp); }
-            }, o.hoverDuration));
-          }, delay));
-        }
+            }
+          }, o.hoverDuration));
+        }, Math.round(ring * perRing)));
       }
     }
 
     // Coarse-pointer (touch) fallback: a slow Lissajous drift of the virtual
-    // cursor. Skipped under prefers-reduced-motion (README §8).
+    // cursor. Skipped under prefers-reduced-motion (PLAN.md §8).
     _startAmbient() {
       if (this._ambient) return;
       const o = this._opts;
@@ -1466,7 +1491,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     applyEdgeBlend, normalizeEdgeBlend, measureGlyphAspect, toneValue,
     toneAndDither, popcount, densityToCols,
     mulberry32, quantizeAnsi256, noiseProbability, tickInterval, glowShadow,
-    falloffWeight, resolveAccent,
+    falloffWeight, resolveAccent, effectiveHoverRadius,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = ASCIIEngine;

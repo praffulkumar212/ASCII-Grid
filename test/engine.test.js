@@ -191,7 +191,7 @@ function check(name, ok, extra) {
         eBp._opts.edgeBlend === 0 && eBp._opts.cols === 150,
         'edge=' + eBp._opts.edgeBlend + ' cols=' + eBp._opts.cols);
 
-  // Seeded RNG: deterministic, README §9 formulas
+  // Seeded RNG: deterministic, PLAN.md §9 formulas
   const r1 = I.mulberry32(1337), r2 = I.mulberry32(1337);
   const seq1 = [r1(), r1(), r1()], seq2 = [r2(), r2(), r2()];
   check('P3: mulberry32 deterministic for equal seeds', JSON.stringify(seq1) === JSON.stringify(seq2));
@@ -254,9 +254,15 @@ function check(name, ok, extra) {
   check('P5: hover opts normalize (defaults + validation)', (() => {
     const e = new ASCIIEngine(new Element('div'), { hoverEffect: 'highlight', alt: 'x' });
     const bad = new ASCIIEngine(new Element('div'), { hoverEffect: 'wobble', alt: 'x' });
-    return e._opts.hoverEffect === 'highlight' && e._opts.hoverRadius === 4
+    return e._opts.hoverEffect === 'highlight' && e._opts.hoverRadius === '25%'
       && e._opts.hoverDuration === 150 && e._opts.hoverFalloff === 'smooth'
       && bad._opts.hoverEffect === null;
+  })());
+
+  check('FIX #8: hover radius scales with image — 25% default, % strings, absolute override', (() => {
+    const f = I.effectiveHoverRadius;
+    return f('25%', 240) === 60 && f('25%', 40) === 10 && f('50%', 100) === 50
+      && f(4, 240) === 4 && f('12', 100) === 12 && f('150%', 100) === 100;
   })());
 
   check('P5: falloff weights — smooth center 1 edge 0, monotonic', (() => {

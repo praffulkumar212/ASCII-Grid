@@ -51,7 +51,7 @@ output.
 Two-part fix:
 - Short term: sort the ramp by dot count (popcount of the low 8 bits of
   `codepoint - 0x2800`).
-- Real fix (per README §3, "Braille dot-matrix (highest fidelity)"): braille
+- Real fix (per PLAN.md §3, "Braille dot-matrix (highest fidelity)"): braille
   should be a distinct **render technique**, not a ramp — each glyph encodes a
   2×4 subpixel block: threshold 8 samples per cell, set dots via
   `0x2800 + bitmask`. Grid sampling for braille mode needs 2×4 sub-samples per
@@ -60,7 +60,7 @@ Two-part fix:
 ## 5. GAP — `edgeBlend` is a silent no-op  [FIXED v0.2.1 — Sobel implemented, accepts 0–1 or percent]
 
 `edgeBlend` is accepted, documented as structural, and part of the cache key,
-but no Sobel pass exists. Either implement Sobel edge detection (README §2 step
+but no Sobel pass exists. Either implement Sobel edge detection (PLAN.md §2 step
 3: blendable 0–100% with brightness mapping) or throw/warn until implemented —
 silent acceptance is misleading, and presets in Phase 3 (Blueprint, Line-Art)
 depend on it.
@@ -81,7 +81,7 @@ art until a repaint (plan §5 promises automatic flipping). Options:
 the blend live), or observe theme changes and repaint (cheap — grid is cached).
 Pure `theme` mode is already correct.
 
-## 8. ENHANCEMENT — hover radius should scale with the image  [OPEN — requested 2026-07-07]
+## 8. ENHANCEMENT — hover radius should scale with the image  [FIXED v0.5.1 — default '25%' of cols, % strings supported, absolute numbers respected as override; ripple ring-batched]
 
 The hover radius must cover **at least 25% of the image**, not a fixed cell
 count. Today `hoverRadius` is absolute (default 4, clamped 1–20 cells): on a

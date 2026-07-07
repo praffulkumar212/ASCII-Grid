@@ -1,7 +1,7 @@
 # CLAUDE.md — ascii-engine
 
 ## What this is
-ASCII art generator for interactive article thumbnails/graphics on Prafful's website. Full spec lives in **README.md — read it before writing code.** Two layers:
+ASCII art generator for interactive article thumbnails/graphics on Prafful's website. Full spec lives in **PLAN.md — read it before writing code.** Two layers:
 
 - **Engine** (`src/ascii-engine.js`): zero-dependency vanilla JS, single file, embeddable via `<script>` tag or ESM. No frameworks, no build step required (minification only, later).
 - **Playground** (`playground/index.html`): single self-contained HTML page that uses the engine and exports embed snippets. No external dependencies.
@@ -40,8 +40,8 @@ so dist/ stays current. Visual/feel changes need manual browser testing.
 
 ## Conventions
 - Vanilla JS (ES2020+), no dependencies, no TypeScript
-- Engine API is declarative-first: `data-ascii-*` attributes on a `<div>` (see README §10 for the embed shape); programmatic API secondary
-- Attribute percentages map to concrete formulas per README §9 — implement those exact mappings
+- Engine API is declarative-first: `data-ascii-*` attributes on a `<div>` (see PLAN.md §10 for the embed shape); programmatic API secondary
+- Attribute percentages map to concrete formulas per PLAN.md §9 — implement those exact mappings
 - Test manually via `examples/` pages; open in browser, no test framework for now
 
 ## Git
