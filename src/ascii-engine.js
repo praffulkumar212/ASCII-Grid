@@ -1,5 +1,5 @@
 /*!
- * ascii-engine.js — v0.5.2
+ * ascii-engine.js — v0.6.0
  * Phase 1: image → brightness grid → dom/pre render, fitMode, caching, a11y
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
  * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
@@ -62,12 +62,12 @@
     'theme-adaptive': { density: 62, contrast: 50, charset: 'classic',  colorMode: 'theme' },
     'classic-mono':   { density: 55, contrast: 60, charset: 'classic',  colorMode: 'theme', saturation: 0 },
     'matrix-rain':    { density: 70, contrast: 65, charset: 'extended', colorMode: 'theme', fg: '#33ff66', bg: '#020a04', glow: 35, noise: 18, animSpeed: 45, seed: 42 },
-    'blueprint':      { density: 65, contrast: 45, charset: ' .:-=+',   colorMode: 'theme', edgeBlend: 0.85, fg: '#dce9ff', bg: '#0d2137' },
+    'blueprint':      { density: 65, contrast: 45, charset: ' .:-=+',   colorMode: 'theme', edgeBlend: 0.85, edgeStyle: 'line', fg: '#dce9ff', bg: '#0d2137' },
     'crt':            { density: 60, contrast: 70, charset: 'classic',  colorMode: 'theme', fg: '#33ff33', bg: '#031103', glow: 55, noise: 4, animSpeed: 20, seed: 7 },
     'halftone':       { density: 58, contrast: 55, charset: ' ·:oO8@',  colorMode: 'theme', dither: 0.9, ditheringMode: 'bayer', saturation: 0 },
     'braille':        { density: 80, contrast: 55, charset: 'braille',  colorMode: 'theme' },
     'blocks':         { density: 45, contrast: 50, charset: 'blocks',   colorMode: 'source', saturation: 90 },
-    'line-art':       { density: 65, contrast: 45, charset: ' .:-=+*',  colorMode: 'theme', edgeBlend: 1.0 },
+    'line-art':       { density: 65, contrast: 45, charset: ' .:-=+*',  colorMode: 'theme', edgeBlend: 1.0, edgeStyle: 'line' },
     'cyberpunk':      { density: 68, contrast: 60, charset: 'extended', colorMode: 'source', saturation: 100, glow: 45, fg: '#ff2fd6', bg: '#0a0118', accent: '#22e6ff', noise: 6, animSpeed: 25, seed: 2077 },
     'glitch':         { density: 66, contrast: 55, charset: 'extended', colorMode: 'source', dither: 0.3, noise: 60, animSpeed: 70, seed: 1337 },
     'faded':          { density: 55, contrast: 25, gamma: 1.4, charset: 'classic', colorMode: 'source', saturation: 30, themeBlend: 60 },
@@ -184,29 +184,31 @@ self.onmessage = function (e) {
 
   var brightness = new Float32Array(rows * cols);
   var colors     = new Uint8Array(rows * cols * 3);
+  var alphas     = new Uint8Array(rows * cols);
+
   var cellW = imgW / cols;
   var cellH = imgH / rows;
 
   for (var r = 0; r < rows; r++) {
     for (var c = 0; c < cols; c++) {
-      sampleCell(px, imgW, imgH, c, r, cellW, cellH, brightness, colors, r * cols + c);
+      sampleCell(px, imgW, imgH, c, r, cellW, cellH, brightness, colors, alphas, r * cols + c);
     }
   }
 
   // Transfer brightness (performance-critical Float32Array); clone colors to
   // avoid a Safari bug where the second transferred buffer arrives zeroed.
   self.postMessage(
-    { rows: rows, cols: cols, brightness: brightness, colors: colors },
+    { rows: rows, cols: cols, brightness: brightness, colors: colors, alphas: alphas },
     [brightness.buffer]
   );
 };
 
-function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors, idx) {
+function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors, alphas, idx) {
   var x0 = Math.floor(col * cellW);
   var y0 = Math.floor(row * cellH);
   var x1 = Math.min(Math.ceil((col + 1) * cellW), imgW);
   var y1 = Math.min(Math.ceil((row + 1) * cellH), imgH);
-  var lumSum = 0, rSum = 0, gSum = 0, bSum = 0, count = 0;
+  var lumSum = 0, rSum = 0, gSum = 0, bSum = 0, aSum = 0, count = 0;
   for (var y = y0; y < y1; y++) {
     for (var x = x0; x < x1; x++) {
       var i  = (y * imgW + x) * 4;
@@ -217,18 +219,21 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       var bv = data[i + 2] * a + 255 * (1 - a);
       lumSum += 0.299 * rv + 0.587 * gv + 0.114 * bv;
       rSum += rv; gSum += gv; bSum += bv;
+      aSum += data[i + 3];
       count++;
     }
   }
   if (count === 0) {
     brightness[idx] = 1;
     colors[idx * 3] = colors[idx * 3 + 1] = colors[idx * 3 + 2] = 255;
+    alphas[idx] = 0;
     return;
   }
   brightness[idx]     = lumSum / count / 255;
   colors[idx * 3]     = Math.round(rSum / count);
   colors[idx * 3 + 1] = Math.round(gSum / count);
   colors[idx * 3 + 2] = Math.round(bSum / count);
+  alphas[idx]         = Math.round(aSum / count);
 }
 `;
 
@@ -357,6 +362,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
   function processPixels(data, imgW, imgH, cols, rows) {
     const brightness = new Float32Array(rows * cols);
     const colors     = new Uint8Array(rows * cols * 3);
+    const alphas     = new Uint8Array(rows * cols);
     const cellW = imgW / cols;
     const cellH = imgH / rows;
     for (let r = 0; r < rows; r++) {
@@ -364,7 +370,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         const x0 = Math.floor(c * cellW), y0 = Math.floor(r * cellH);
         const x1 = Math.min(Math.ceil((c + 1) * cellW), imgW);
         const y1 = Math.min(Math.ceil((r + 1) * cellH), imgH);
-        let lumSum = 0, rSum = 0, gSum = 0, bSum = 0, count = 0;
+        let lumSum = 0, rSum = 0, gSum = 0, bSum = 0, aSum = 0, count = 0;
         for (let y = y0; y < y1; y++) {
           for (let x = x0; x < x1; x++) {
             const i  = (y * imgW + x) * 4;
@@ -374,6 +380,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
             const bv = data[i + 2] * a + 255 * (1 - a);
             lumSum += 0.299 * rv + 0.587 * gv + 0.114 * bv;
             rSum += rv; gSum += gv; bSum += bv;
+            aSum += data[i + 3];
             count++;
           }
         }
@@ -381,15 +388,73 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         if (count === 0) {
           brightness[idx] = 1;
           colors[idx * 3] = colors[idx * 3 + 1] = colors[idx * 3 + 2] = 255;
+          alphas[idx] = 0;
         } else {
           brightness[idx]     = lumSum / count / 255;
           colors[idx * 3]     = Math.round(rSum / count);
           colors[idx * 3 + 1] = Math.round(gSum / count);
           colors[idx * 3 + 2] = Math.round(bSum / count);
+          alphas[idx]         = Math.round(aSum / count);
         }
       }
     }
-    return { rows, cols, brightness, colors };
+    return { rows, cols, brightness, colors, alphas };
+  }
+
+  // ─── Masking (alpha + lasso polygon) ───────────────────────────────────────
+  // A mask marks cells as outside the artwork: they render as space and are
+  // excluded from noise corruption and hover effects. Two sources, combined:
+  // image transparency (maskAlpha, on by default — a transparent-background
+  // icon should never grow noise confetti in the empty area) and an optional
+  // user polygon in normalized image coords (the playground lasso).
+
+  function pointInPolygon(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function buildMask(grid, opts) {
+    const N = grid.rows * grid.cols;
+    let mask = null;
+    const ensure = () => mask || (mask = new Uint8Array(N).fill(1));
+    if (opts.maskAlpha !== false && grid.alphas) {
+      for (let i = 0; i < N; i++) {
+        if (grid.alphas[i] < 13) ensure()[i] = 0; // <5% coverage = outside
+      }
+    }
+    const poly = opts.mask;
+    if (poly && poly.length >= 3) {
+      ensure();
+      for (let r = 0; r < grid.rows; r++) {
+        for (let c = 0; c < grid.cols; c++) {
+          const i = r * grid.cols + c;
+          if (mask[i] && !pointInPolygon((c + 0.5) / grid.cols, (r + 0.5) / grid.rows, poly)) mask[i] = 0;
+        }
+      }
+    }
+    return mask; // null = everything visible
+  }
+
+  // ─── Auto-contrast (percentile stretch) ────────────────────────────────────
+  // Remaps brightness so the 2nd/98th percentiles of the *visible* cells span
+  // the full range — washed-out photos get punch without touching sliders.
+  function autoContrastRemap(brightness, mask) {
+    const vals = [];
+    for (let i = 0; i < brightness.length; i++) {
+      if (!mask || mask[i]) vals.push(brightness[i]);
+    }
+    if (vals.length < 16) return brightness;
+    vals.sort((a, b) => a - b);
+    const lo = vals[(vals.length * 0.02) | 0];
+    const hi = vals[Math.min(vals.length - 1, (vals.length * 0.98) | 0)];
+    if (hi - lo < 0.05) return brightness; // flat image — leave alone
+    const out = new Float32Array(brightness.length);
+    for (let i = 0; i < brightness.length; i++) out[i] = clamp01((brightness[i] - lo) / (hi - lo));
+    return out;
   }
 
   // ─── Dithering ─────────────────────────────────────────────────────────────
@@ -442,8 +507,15 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     return clamp01(e);
   }
 
-  function applyEdgeBlend(brightness, rows, cols, amount) {
+  // Full Sobel pass: blended brightness + per-cell edge *direction* so strong
+  // edges can render as oriented line glyphs (- / | \) instead of shading —
+  // this is what turns Blueprint/Line-Art into actual line drawings.
+  // Screen coords have y pointing down, so a 45° line direction is '\', 135° is '/'.
+  const EDGE_GLYPHS = '-\\|/';
+
+  function applyEdge(brightness, rows, cols, amount) {
     const out = new Float32Array(brightness.length);
+    const dir = new Int8Array(brightness.length).fill(-1);
     const get = (r, c) => brightness[
       Math.max(0, Math.min(rows - 1, r)) * cols + Math.max(0, Math.min(cols - 1, c))
     ];
@@ -455,10 +527,21 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
                  - (get(r-1,c-1) + 2*get(r-1,c) + get(r-1,c+1));
         // Max |gx| is 4 on a 0-1 grid; ×1.5 boost so single-step edges read clearly.
         const mag = clamp01(Math.sqrt(gx*gx + gy*gy) / 4 * 1.5);
-        out[r*cols + c] = (1 - amount) * brightness[r*cols + c] + amount * (1 - mag);
+        const i = r * cols + c;
+        out[i] = (1 - amount) * brightness[i] + amount * (1 - mag);
+        if (mag > 0.45) {
+          // gradient points across the edge; the line runs perpendicular to it
+          const deg = ((Math.atan2(gy, gx) * 180 / Math.PI) + 90 + 360) % 180;
+          dir[i] = Math.round(deg / 45) % 4; // 0:'-' 1:'\' 2:'|' 3:'/' (y-down)
+        }
       }
     }
-    return out;
+    return { brightness: out, dir };
+  }
+
+  // kept for test-harness compatibility
+  function applyEdgeBlend(brightness, rows, cols, amount) {
+    return applyEdge(brightness, rows, cols, amount).brightness;
   }
 
   // ─── Color utilities ───────────────────────────────────────────────────────
@@ -554,6 +637,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._io            = null;   // Phase 6 entrance observer
       this._entranceRaf   = null;
       this._warnedSize    = false;
+      this._mask          = null;   // v0.6: alpha/lasso mask (1=visible)
+      this._noisePool     = null;   // eligible cell indices when masked
     }
 
     // preset baseline ← user overrides → normalized opts
@@ -677,6 +762,11 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         // Phase 6 — entrance animations (PLAN.md §11)
         entrance:      ['typing', 'fade'].indexOf(raw.entrance) !== -1 ? raw.entrance : null,
         entranceDuration: raw.entranceDuration != null ? Math.max(0, Number(raw.entranceDuration)) : 900,
+        // v0.6 — masking + art quality
+        maskAlpha:     !(raw.maskAlpha === false || raw.maskAlpha === 'false'), // default true
+        mask:          Array.isArray(raw.mask) && raw.mask.length >= 3 ? raw.mask : null,
+        autoContrast:  raw.autoContrast === true || raw.autoContrast === 'true',
+        edgeStyle:     raw.edgeStyle === 'line' ? 'line' : 'shade',
       };
     }
 
@@ -702,10 +792,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         grid = await this._runWorker(getImageData(img), opts.cols, rows);
         // FIXES.md #5: Sobel edge blend — structural, baked into the cached
         // grid (edge amount is part of the cache key, so entries stay coherent).
+        // Direction map stored alongside for edgeStyle:'line' glyph rendering.
         if (edge > 0) {
+          const e = applyEdge(grid.brightness, grid.rows, grid.cols, edge);
           grid = {
             rows: grid.rows, cols: grid.cols, colors: grid.colors,
-            brightness: applyEdgeBlend(grid.brightness, grid.rows, grid.cols, edge),
+            alphas: grid.alphas, brightness: e.brightness, edgeDir: e.dir,
           };
         }
         _gridCache.set(key, grid);
@@ -741,6 +833,29 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       });
     }
 
+    // Shared per-paint prep: mask, auto-contrast, tone/dither. All renderers
+    // then ask _charFor(i) for the final glyph (mask → space, strong edges →
+    // oriented line glyphs when edgeStyle is 'line').
+    _prepPaint(grid, opts, charset) {
+      this._mask = buildMask(grid, opts);
+      let b = grid.brightness;
+      if (opts.autoContrast) b = autoContrastRemap(b, this._mask);
+      const dithered = opts.dither > 0;
+      if (dithered) b = toneAndDither(b, grid.rows, grid.cols, charset.length, opts);
+      return {
+        brightness: b,
+        exp:   dithered ? 1.0 : contrastExponent(opts.contrast),
+        gamma: dithered ? 1.0 : opts.gamma,
+        edgeLines: opts.edgeStyle === 'line' && grid.edgeDir ? grid.edgeDir : null,
+      };
+    }
+
+    _charFor(prep, charset, i) {
+      if (this._mask && !this._mask[i]) return ' ';
+      if (prep.edgeLines && prep.edgeLines[i] >= 0) return EDGE_GLYPHS[prep.edgeLines[i]];
+      return mapChar(prep.brightness[i], charset, prep.exp, prep.gamma);
+    }
+
     _paint(grid, opts) {
       this._stopEffects();    // repaint invalidates span refs / base text
       this._teardownHover();
@@ -768,13 +883,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         console.warn('[ascii-engine] canvas 2d context unavailable — falling back to pre mode.');
         return this._renderPre(grid, opts);
       }
-      const charset  = resolveCharset(opts.charset);
-      const dithered = opts.dither > 0;
-      const exp      = dithered ? 1.0 : contrastExponent(opts.contrast);
-      const gamma    = dithered ? 1.0 : opts.gamma;
-      const brightness = dithered
-        ? toneAndDither(grid.brightness, grid.rows, grid.cols, charset.length, opts)
-        : grid.brightness;
+      const charset = resolveCharset(opts.charset);
+      const prep = this._prepPaint(grid, opts, charset);
 
       const scale = 2; // crisp on hidpi
       const cw = 8 * scale, ch = Math.round(8 * (opts.glyphAspect || GLYPH_ASPECT)) * scale;
@@ -794,7 +904,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       const chars  = new Array(grid.rows * grid.cols);
       const colors = new Array(grid.rows * grid.cols);
       for (let i = 0; i < chars.length; i++) {
-        chars[i] = mapChar(brightness[i], charset, exp, gamma);
+        chars[i] = this._charFor(prep, charset, i);
         if (useColor) {
           let cr = grid.colors[i*3], cg = grid.colors[i*3+1], cb = grid.colors[i*3+2];
           if (satPct !== 100) { [cr, cg, cb] = applySaturation(cr, cg, cb, satPct); }
@@ -855,6 +965,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._canvasMeta = meta;
       this._spans = null; this._preEl = null; this._baseText = null;
       this._paintGrid = grid;
+      this._buildNoisePool();
     }
 
     // Glow (PLAN.md §9: text-shadow 0 0 pct×12px currentColor, layered ×2 >60%)
@@ -870,20 +981,15 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _renderPre(grid, opts) {
-      const charset  = resolveCharset(opts.charset);
+      const charset = resolveCharset(opts.charset);
       // FIXES.md #6: tone (gamma+contrast) is applied *before* dithering so
       // error diffusion lands on charset levels; mapChar then runs neutral.
-      const dithered = opts.dither > 0;
-      const exp      = dithered ? 1.0 : contrastExponent(opts.contrast);
-      const gamma    = dithered ? 1.0 : opts.gamma;
-      const brightness = dithered
-        ? toneAndDither(grid.brightness, grid.rows, grid.cols, charset.length, opts)
-        : grid.brightness;
+      const prep = this._prepPaint(grid, opts, charset);
 
       let text = '';
       for (let r = 0; r < grid.rows; r++) {
         for (let c = 0; c < grid.cols; c++) {
-          text += mapChar(brightness[r * grid.cols + c], charset, exp, gamma);
+          text += this._charFor(prep, charset, r * grid.cols + c);
         }
         if (r < grid.rows - 1) text += '\n';
       }
@@ -900,15 +1006,10 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _renderDOM(grid, opts) {
-      const charset  = resolveCharset(opts.charset);
+      const charset = resolveCharset(opts.charset);
       // FIXES.md #6: tone before dither (see _renderPre). Copy-on-write — the
       // cached grid is never mutated.
-      const dithered = opts.dither > 0;
-      const exp      = dithered ? 1.0 : contrastExponent(opts.contrast);
-      const gamma    = dithered ? 1.0 : opts.gamma;
-      const brightness = dithered
-        ? toneAndDither(grid.brightness, grid.rows, grid.cols, charset.length, opts)
-        : grid.brightness;
+      const prep = this._prepPaint(grid, opts, charset);
 
       // Color setup.
       const useColor  = opts.colorMode === 'source' && grid.colors;
@@ -935,12 +1036,13 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         const gridChanged = this._paintGrid !== grid;
         for (let i = 0; i < spans.length; i++) {
           const sp = spans[i];
-          const ch = mapChar(brightness[i], charset, exp, gamma);
+          const ch = this._charFor(prep, charset, i);
           if (sp.textContent !== ch) sp.textContent = ch;
-          const col = colorOf(i);
+          const col = this._mask && !this._mask[i] ? '' : colorOf(i);
           if ((sp.style.color || '') !== col) sp.style.color = col;
           if (gridChanged) sp.dataset.brightness = grid.brightness[i].toFixed(3);
         }
+        this._buildNoisePool();
         this._paintGrid = grid;
         this._preEl = null; this._baseText = null;
         return;
@@ -969,13 +1071,13 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         for (let c = 0; c < grid.cols; c++) {
           const idx = r * grid.cols + c;
           const raw = grid.brightness[idx];  // raw luminance for data-brightness
-          const ch  = mapChar(brightness[idx], charset, exp, gamma);
+          const ch  = this._charFor(prep, charset, idx);
           const sp  = document.createElement('span');
           sp.textContent        = ch;
           sp.dataset.brightness = raw.toFixed(3);
           sp.dataset.cell       = r + ',' + c;
 
-          const col = colorOf(idx);
+          const col = this._mask && !this._mask[idx] ? '' : colorOf(idx);
           if (col) sp.style.color = col;
 
           spans.push(sp);
@@ -986,6 +1088,16 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._el.appendChild(frag);
       this._spans = spans; this._preEl = null; this._baseText = null;
       this._paintGrid = grid; this._canvasMeta = null;
+      this._buildNoisePool();
+    }
+
+    // Cells eligible for noise corruption: everything unless a mask exists —
+    // masked-out cells (transparent bg / outside the lasso) never corrupt.
+    _buildNoisePool() {
+      if (!this._mask) { this._noisePool = null; return; }
+      const pool = [];
+      for (let i = 0; i < this._mask.length; i++) if (this._mask[i]) pool.push(i);
+      this._noisePool = pool;
     }
 
     _applyA11y(opts) {
@@ -1070,37 +1182,46 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       const rng = this._rng || (this._rng = mulberry32(o.seed || 0));
       this._restoreNoise();
 
+      // Masked cells (transparent bg / outside the lasso) are excluded: the
+      // pool holds eligible indices; without a mask the pool is null and we
+      // sample the full range.
+      const pool = this._noisePool;
+
       if (this._spans) {
         // PERF: sample k = N·p random cells (O(k)) instead of an rng roll per
         // span (O(N)) — at 240 cols that's ~80 ops/tick instead of ~30,000.
         const spans = this._spans;
-        const N = spans.length;
-        const k = Math.round(N * p);
+        const N = pool ? pool.length : spans.length;
+        const k = Math.round(spans.length * p * (N / spans.length)); // scale to visible area
         const corrupted = [];
         for (let n = 0; n < k; n++) {
-          const sp = spans[(rng() * N) | 0];
+          const idx = pool ? pool[(rng() * N) | 0] : (rng() * N) | 0;
+          const sp = spans[idx];
           corrupted.push({ el: sp, ch: sp.textContent });
           sp.textContent = charset[(rng() * charset.length) | 0];
         }
         this._corrupted = corrupted;
       } else if (this._canvasMeta) {
         const m = this._canvasMeta;
-        const N = m.chars.length;
+        const N = pool ? pool.length : m.chars.length;
         const k = Math.round(N * p);
         const corrupted = [];
         for (let n = 0; n < k; n++) {
-          const i = (rng() * N) | 0;
+          const i = pool ? pool[(rng() * N) | 0] : (rng() * N) | 0;
           corrupted.push({ i });
           m.drawCell(i, charset[(rng() * charset.length) | 0], null);
         }
         this._corrupted = corrupted;
       } else if (this._preEl && this._baseText != null) {
         const chars = this._baseText.split('');
-        const N = chars.length;
+        const cols = this._grid ? this._grid.cols : 0;
+        const N = pool ? pool.length : chars.length;
         const k = Math.round(N * p);
         for (let n = 0; n < k; n++) {
-          const i = (rng() * N) | 0;
-          if (chars[i] !== '\n') chars[i] = charset[(rng() * charset.length) | 0];
+          const gi = pool ? pool[(rng() * N) | 0] : (rng() * N) | 0;
+          // grid index → text index (rows are joined with '\n')
+          const ti = pool && cols ? ((gi / cols) | 0) * (cols + 1) + (gi % cols) : gi;
+          if (chars[ti] !== '\n' && chars[ti] != null) chars[ti] = charset[(rng() * charset.length) | 0];
         }
         this._preEl.textContent = chars.join('');
       }
@@ -1310,6 +1431,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
             const dx = c - c0, dy = (r - r0) * aspect;
             if (falloffWeight(Math.sqrt(dx * dx + dy * dy), radius, o.hoverFalloff) <= 0) continue;
             const i = r * m.cols + c;
+            if (this._mask && !this._mask[i]) continue;
             m.drawCell(i, null, accent);
             affected.push(i);
           }
@@ -1337,7 +1459,9 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
           const dx = c - c0, dy = (r - r0) * aspect;
           const t = falloffWeight(Math.sqrt(dx * dx + dy * dy), radius, o.hoverFalloff);
           if (t < 0.03) continue; // imperceptible — skip the style write
-          const sp = this._spans[r * grid.cols + c];
+          const idx = r * grid.cols + c;
+          if (this._mask && !this._mask[idx]) continue; // outside the artwork
+          const sp = this._spans[idx];
           if (!sp) continue;
           next.set(sp, Math.round(t * 20) / 20); // quantize → stable style strings
         }
@@ -1399,9 +1523,11 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
           const dx = c - c0, dy = (r - r0) * aspect;
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d > radius) continue;
+          const idx = r * grid.cols + c;
+          if (this._mask && !this._mask[idx]) continue;
           const key = Math.round(d);
           if (!rings.has(key)) rings.set(key, []);
-          rings.get(key).push(this._spans[r * grid.cols + c]);
+          rings.get(key).push(this._spans[idx]);
         }
       }
       for (const [ring, spans] of rings) {
@@ -1477,6 +1603,10 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       'data-ascii-hover-falloff': 'hoverFalloff',
       'data-ascii-entrance':      'entrance',
       'data-ascii-entrance-duration': 'entranceDuration',
+      'data-ascii-edge-style':    'edgeStyle',
+      'data-ascii-auto-contrast': 'autoContrast',
+      'data-ascii-mask-alpha':    'maskAlpha',
+      // mask polygons travel via data-ascii-config JSON
     };
     for (const [attr, key] of Object.entries(attrs)) {
       if (config[key] != null) continue;
@@ -1527,6 +1657,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     toneAndDither, popcount, densityToCols,
     mulberry32, quantizeAnsi256, noiseProbability, tickInterval, glowShadow,
     falloffWeight, resolveAccent, effectiveHoverRadius,
+    buildMask, pointInPolygon, autoContrastRemap, applyEdge, EDGE_GLYPHS,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = ASCIIEngine;

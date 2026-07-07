@@ -21,11 +21,13 @@ perf work (in-place span patching, O(k) noise sampling, rAF-coalesced hover,
 >10k-glyph warning); `dist/ascii-engine.min.js` (~11 KB gz, `npm run build`);
 docs at `docs/index.html`.
 Still open: FIXES.md #7 (theme-toggle repaint for source+themeBlend —
-playground re-renders as workaround); true braille dot-matrix render technique
-(2×4 subpixels/glyph); canvas hover is highlight-semantics only.
-PARKED (user decision — do not pick up unprompted): FIXES.md #9 video export.
-Shipped: #8 relative hover radius (v0.5.1); QA round #10 — hover diffing,
-canvas font calibration, fullscreen (v0.5.2).
+playground re-renders as workaround); canvas hover is highlight-semantics only.
+PARKED (user decision — do not pick up unprompted): FIXES.md #9 video export
+and the full #12 backlog list (URL sharing, saved presets, batch, Figma plugin,
+golden tests, CORS UX, SSR mode, braille dot-matrix, Safari pass).
+Shipped: #8 relative hover radius (v0.5.1); #10 QA round (v0.5.2); #11 v0.6.0 —
+alpha masking (default), lasso region mask, edge-direction line glyphs,
+auto-contrast.
 Tests: `npm test` = `node test/engine.test.js` (54 checks) — keep passing and
 extend. Presets in `src/ascii-engine.js` (PRESETS) and `presets/presets.json`
 must stay identical (test-enforced). After touching src/, re-run `npm run build`

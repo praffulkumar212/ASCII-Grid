@@ -81,6 +81,11 @@
   #fsBtn { position: absolute; top: .6rem; right: .6rem; z-index: 2; padding: .25rem .6rem;
            font-size: .78rem; opacity: .75; }
   #fsBtn:hover { opacity: 1; }
+  #lassoBtn { position: absolute; top: .6rem; left: .6rem; z-index: 2; padding: .25rem .6rem;
+              font-size: .78rem; opacity: .75; }
+  #lassoBtn:hover { opacity: 1; }
+  #lassoBtn.active { border-color: var(--pg-active); color: var(--pg-active); opacity: 1; }
+  #lassoCanvas { position: absolute; z-index: 3; cursor: crosshair; touch-action: none; display: none; }
   #preview-wrap:fullscreen { max-height: none; border: none; border-radius: 0;
                              display: flex; align-items: center; justify-content: center;
                              background: var(--pg-bg); }
@@ -106,7 +111,9 @@
 <!-- ══ LEFT: preview ══ -->
 <main id="left">
   <div id="preview-wrap">
+    <button id="lassoBtn" title="Draw a region — art renders only inside it">◌ Lasso</button>
     <button id="fsBtn" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+    <canvas id="lassoCanvas"></canvas>
     <div id="art"></div>
   </div>
   <div id="status">No image yet.</div>
@@ -180,6 +187,9 @@
     </select></div>
   <div><label>Alt text (required for accessibility)</label>
     <input type="text" id="c-alt" placeholder="Describe the image…"></div>
+  <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
+    <input type="checkbox" id="c-autoContrast" style="width:auto"> Auto contrast
+    <span class="val">(percentile stretch)</span></label></div>
   <div><label>Hover effect <span class="val">(move cursor over art)</span></label>
     <select id="c-hoverEffect">
       <option value="none">None</option>
@@ -253,6 +263,74 @@
     document.documentElement.classList.toggle('dark');
     // theme mode re-reads CSS vars automatically; source+blend needs repaint (FIXES.md #7)
     if (engine) render();
+  });
+
+  // ── lasso: draw a region, art renders only inside (engine `mask` option) ──
+  const lassoBtn = $('lassoBtn'), lassoCv = $('lassoCanvas');
+  let lassoActive = false, lassoPts = [], lassoDrawing = false;
+
+  function lassoOverlayOn() {
+    const art = artEl, wrap = $('preview-wrap');
+    lassoCv.style.left = art.offsetLeft + 'px';
+    lassoCv.style.top = art.offsetTop + 'px';
+    lassoCv.width = art.offsetWidth; lassoCv.height = art.offsetHeight;
+    lassoCv.style.display = 'block';
+  }
+  function lassoOverlayOff() { lassoCv.style.display = 'none'; }
+  function lassoLabel() {
+    lassoBtn.textContent = overrides.mask ? '✕ Clear mask' : (lassoActive ? '◌ Drawing…' : '◌ Lasso');
+    lassoBtn.classList.toggle('active', lassoActive);
+  }
+
+  lassoBtn.addEventListener('click', () => {
+    if (overrides.mask) {                    // clear existing mask
+      overrides.mask = null;
+      if (engine) engine.update({ mask: null }).then(showStats);
+      lassoActive = false; lassoOverlayOff(); lassoLabel();
+      return;
+    }
+    if (!engine) { status('Load an image first, then lasso.'); return; }
+    lassoActive = !lassoActive;
+    lassoActive ? lassoOverlayOn() : lassoOverlayOff();
+    lassoLabel();
+  });
+
+  function lassoPoint(e) {
+    const r = lassoCv.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  }
+  function lassoDraw() {
+    const ctx = lassoCv.getContext('2d');
+    ctx.clearRect(0, 0, lassoCv.width, lassoCv.height);
+    if (lassoPts.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(lassoPts[0][0] * lassoCv.width, lassoPts[0][1] * lassoCv.height);
+    for (const p of lassoPts) ctx.lineTo(p[0] * lassoCv.width, p[1] * lassoCv.height);
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--pg-active') || '#4f8cff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  lassoCv.addEventListener('pointerdown', (e) => {
+    lassoDrawing = true; lassoPts = [lassoPoint(e)];
+    lassoCv.setPointerCapture && lassoCv.setPointerCapture(e.pointerId);
+  });
+  lassoCv.addEventListener('pointermove', (e) => {
+    if (!lassoDrawing) return;
+    lassoPts.push(lassoPoint(e)); lassoDraw();
+  });
+  lassoCv.addEventListener('pointerup', () => {
+    lassoDrawing = false;
+    if (lassoPts.length >= 3) {
+      // decimate to ≤48 points — plenty for a lasso, keeps configs small
+      const step = Math.max(1, Math.ceil(lassoPts.length / 48));
+      const poly = lassoPts.filter((_, i) => i % step === 0).map(p => [
+        Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000,
+      ]);
+      overrides.mask = poly;
+      engine.update({ mask: poly }).then(showStats);
+    }
+    lassoActive = false; lassoOverlayOff(); lassoLabel();
   });
 
   // ── fullscreen ───────────────────────────────────────────────────────────
@@ -362,11 +440,14 @@
       const v = (k === 'hoverEffect' || k === 'entrance') && o[k] == null ? 'none' : o[k];
       if ([...el.options].some((op) => op.value === v)) el.value = v;
     });
+    $('c-autoContrast').checked = !!o.autoContrast;
+    lassoLabel();
   }
 
   function applyPreset(name) {
     preset = name;
-    overrides = {};
+    // reset tweaks, but the lasso is about the image, not the style — keep it
+    overrides = overrides.mask ? { mask: overrides.mask } : {};
     document.querySelectorAll('.tile').forEach((t) => t.classList.toggle('active', t.dataset.preset === name));
     if (!src) return;
     render(true);
@@ -388,6 +469,7 @@
     $('c-' + k).addEventListener('change', (e) => { overrides[k] = e.target.value; debouncedUpdate(); });
   });
   $('c-alt').addEventListener('change', () => { if (engine) engine.update({ alt: altText() }); });
+  $('c-autoContrast').addEventListener('change', (e) => { overrides.autoContrast = e.target.checked; debouncedUpdate(); });
 
   function altText() { return $('c-alt').value.trim() || 'ASCII art'; }
   function currentOverrides() { return Object.assign({}, overrides, { alt: altText() }); }

@@ -405,6 +405,92 @@ function check(name, ok, extra) {
     return ok;
   })());
 
+  // ── v0.6: masking + art quality ─────────────────────────────────────────
+
+  // image with a transparent left half — the screenshot bug scenario
+  function halfTransparentImageData(w, h) {
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const opaque = x >= w / 2;
+      data[i] = data[i+1] = data[i+2] = 40;           // dark subject
+      data[i+3] = opaque ? 255 : 0;                    // left = fully transparent
+    }
+    return { data, width: w, height: h };
+  }
+  const elA = new Element('div'); new Element('div').appendChild(elA);
+  const eA = new ASCIIEngine(elA, { cols: 40, alt: 'x', fitMode: 'fixed', noise: 80, seed: 3 });
+  const gridA = await eA._runWorker(halfTransparentImageData(100, 50), 40, 10);
+  eA._grid = gridA;
+  eA._paint(gridA, eA._opts);
+  const rowTxt = (r) => elA.children[r].children.map(s => s.textContent).join('');
+  check('MASK: alphas sampled per cell (0 left, 255 right)', gridA.alphas[5] === 0 && gridA.alphas[35] === 255);
+  check('MASK: transparent cells render as space, subject renders glyphs',
+        rowTxt(5).slice(0, 20).trim() === '' && rowTxt(5).slice(20).trim() !== '');
+  let confetti = false;
+  for (let t = 0; t < 10; t++) {
+    eA._noiseTick();
+    for (let r = 0; r < 10 && !confetti; r++) if (rowTxt(r).slice(0, 20).trim() !== '') confetti = true;
+    eA._restoreNoise();
+  }
+  check('MASK: noise never corrupts transparent cells (screenshot bug)', !confetti);
+  check('MASK: hover skips masked cells', (() => {
+    eA._opts = Object.assign({}, eA._opts, { hoverEffect: 'highlight', hoverRadius: 8 });
+    eA._paint(gridA, eA._opts);
+    eA._hoverAt(10, 5); // center in the transparent zone
+    const touched = elA.children[5].children.slice(0, 20).some(s => (s.style.color || '') !== '');
+    eA._hoverClear();
+    return !touched;
+  })());
+  eA.destroy();
+
+  // lasso polygon mask
+  check('MASK: pointInPolygon basics', I.pointInPolygon(0.25, 0.5, [[0,0],[0.5,0],[0.5,1],[0,1]])
+        && !I.pointInPolygon(0.75, 0.5, [[0,0],[0.5,0],[0.5,1],[0,1]]));
+  check('MASK: lasso polygon restricts art to the region', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed',
+      mask: [[0, 0], [0.5, 0], [0.5, 1], [0, 1]] }); // left half only
+    e._grid = grid; e._paint(grid, e._opts);         // opaque gradient grid
+    const row = el.children[5].children.map(s => s.textContent).join('');
+    const ok = row.slice(0, 18).trim() !== '' && row.slice(22).trim() === '';
+    e.destroy();
+    return ok;
+  })());
+
+  // edge direction → oriented glyphs
+  check('ART: vertical edge → "|", horizontal edge → "-"', (() => {
+    const vStep = new Float32Array(200); // 10×20, left dark right bright
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 20; c++) vStep[r*20+c] = c < 10 ? 0.1 : 0.9;
+    const hStep = new Float32Array(200); // top dark bottom bright
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 20; c++) hStep[r*20+c] = r < 5 ? 0.1 : 0.9;
+    const v = I.applyEdge(vStep, 10, 20, 1.0).dir;
+    const h = I.applyEdge(hStep, 10, 20, 1.0).dir;
+    return I.EDGE_GLYPHS[v[5*20 + 10]] === '|' && I.EDGE_GLYPHS[h[5*20 + 3]] === '-';
+  })());
+  check('ART: edgeStyle "line" renders oriented glyphs; presets carry it', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 20, alt: 'x', fitMode: 'fixed', edgeBlend: 1, edgeStyle: 'line' });
+    const vStep = new Float32Array(200);
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 20; c++) vStep[r*20+c] = c < 10 ? 0.1 : 0.9;
+    const eg = I.applyEdge(vStep, 10, 20, 1.0);
+    e._grid = { rows: 10, cols: 20, brightness: eg.brightness, edgeDir: eg.dir, colors: null, alphas: null };
+    e._paint(e._grid, e._opts);
+    const ch = el.children[5].children[10].textContent;
+    e.destroy();
+    return ch === '|'
+      && ASCIIEngine.PRESETS['line-art'].edgeStyle === 'line'
+      && ASCIIEngine.PRESETS['blueprint'].edgeStyle === 'line';
+  })());
+
+  // auto-contrast
+  check('ART: autoContrast stretches a flat ramp to full range', (() => {
+    const flat = new Float32Array(400);
+    for (let i = 0; i < 400; i++) flat[i] = 0.4 + 0.2 * ((i % 40) / 39); // 0.4–0.6
+    const out = I.autoContrastRemap(flat, null);
+    return out[0] < 0.03 && out[39] > 0.97 && Math.abs(flat[0] - 0.4) < 1e-6; // input untouched
+  })());
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail > 0 ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(1); });

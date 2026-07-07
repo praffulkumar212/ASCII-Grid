@@ -137,7 +137,33 @@ Fix direction:
   at >10k nodes; playground status bar now shows a live warning steering to
   canvas mode.
 
-## 11. NOTES — no action needed now
+## 11. v0.6.0 — masking + art quality  [SHIPPED 2026-07-07]
+
+- **Alpha masking (default on)** — cells under transparent image areas render
+  empty and are excluded from noise/hover/ripple. Fixes the reported bug:
+  noise confetti filling the empty background of a transparent-bg icon.
+- **Lasso region** — playground tool draws a freehand polygon (normalized
+  image coords, ≤48 pts, exported in config as `mask`); art renders only
+  inside. Survives preset switches.
+- **Edge-direction glyphs** — Sobel gradient direction → oriented `- \ | /`
+  glyphs (`edgeStyle: 'line'`, y-down bucketing); blueprint & line-art presets
+  upgraded.
+- **Auto-contrast** — optional 2%/98% percentile stretch over *visible* cells.
+
+## 12. PARKED BACKLOG — do not pick up unprompted
+
+Product ideas discussed and deliberately parked (with #9 video export):
+- Config-in-URL sharing (playground state in the hash)
+- Saved/named custom presets (localStorage)
+- Batch mode (one style → many images)
+- Figma plugin
+- Golden-file visual regression tests (per-preset text snapshots)
+- CORS failure UX in the playground
+- Static/SSR render mode (pre-render ASCII to HTML at publish time)
+- True braille dot-matrix render technique (2×4 subpixels/glyph — also #4)
+- Safari/mobile test pass
+
+## 13. NOTES — no action needed now
 
 - Grid cache Map is unbounded; fine at current sizes, revisit if playground
   churns many images (LRU cap ~20).
