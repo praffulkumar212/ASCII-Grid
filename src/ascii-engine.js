@@ -1,9 +1,13 @@
 /*!
- * ascii-engine.js — v0.2.1 (Phase 2 + review fixes)
+ * ascii-engine.js — v0.3.0 (Phase 3)
  * Phase 1: image → brightness grid → dom/pre render, fitMode, caching, a11y
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
  * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
  *         dot-count-ordered braille, Sobel edge blend, tone-before-dither
+ * Phase 3: preset system (13 presets, README §9 formulas), seeded noise
+ *          animation (mulberry32), glow, ANSI-256 color quantization.
+ *          Canonical preset data also lives in presets/presets.json — keep in
+ *          sync (enforced by test/engine.test.js).
  */
 (function () {
   'use strict';
@@ -38,6 +42,70 @@
     [ 3, 11,  1,  9],
     [15,  7, 13,  5],
   ];
+
+  // ─── Presets (Phase 3) ─────────────────────────────────────────────────────
+  // Named bundles of options. Attribute % values map to concrete formulas per
+  // README §9. Canonical copy: presets/presets.json (test-enforced sync).
+  // A preset is a *baseline*: options the user passes explicitly always win.
+
+  const PRESETS = {
+    'theme-adaptive': { density: 62, contrast: 50, charset: 'classic',  colorMode: 'theme' },
+    'classic-mono':   { density: 55, contrast: 60, charset: 'classic',  colorMode: 'theme', saturation: 0 },
+    'matrix-rain':    { density: 70, contrast: 65, charset: 'extended', colorMode: 'theme', fg: '#33ff66', bg: '#020a04', glow: 35, noise: 18, animSpeed: 45, seed: 42 },
+    'blueprint':      { density: 65, contrast: 45, charset: ' .:-=+',   colorMode: 'theme', edgeBlend: 0.85, fg: '#dce9ff', bg: '#0d2137' },
+    'crt':            { density: 60, contrast: 70, charset: 'classic',  colorMode: 'theme', fg: '#33ff33', bg: '#031103', glow: 55, noise: 4, animSpeed: 20, seed: 7 },
+    'halftone':       { density: 58, contrast: 55, charset: ' ·:oO8@',  colorMode: 'theme', dither: 0.9, ditheringMode: 'bayer', saturation: 0 },
+    'braille':        { density: 80, contrast: 55, charset: 'braille',  colorMode: 'theme' },
+    'blocks':         { density: 45, contrast: 50, charset: 'blocks',   colorMode: 'source', saturation: 90 },
+    'line-art':       { density: 65, contrast: 45, charset: ' .:-=+*',  colorMode: 'theme', edgeBlend: 1.0 },
+    'cyberpunk':      { density: 68, contrast: 60, charset: 'extended', colorMode: 'source', saturation: 100, glow: 45, fg: '#ff2fd6', bg: '#0a0118', accent: '#22e6ff', noise: 6, animSpeed: 25, seed: 2077 },
+    'glitch':         { density: 66, contrast: 55, charset: 'extended', colorMode: 'source', dither: 0.3, noise: 60, animSpeed: 70, seed: 1337 },
+    'faded':          { density: 55, contrast: 25, gamma: 1.4, charset: 'classic', colorMode: 'source', saturation: 30, themeBlend: 60 },
+    'ansi-256':       { density: 70, contrast: 55, charset: 'classic',  colorMode: 'source', colorQuant: 'ansi256' },
+  };
+
+  // ─── Seeded RNG — mulberry32 (README §2: reproducible randomness) ─────────
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ─── ANSI-256 color quantization ───────────────────────────────────────────
+  // Snaps RGB to the xterm-256 palette (6×6×6 cube + 24-step gray ramp).
+  const ANSI_CUBE = [0, 95, 135, 175, 215, 255];
+  function quantizeAnsi256(r, g, b) {
+    const snap = (v) => {
+      let best = ANSI_CUBE[0];
+      for (const lv of ANSI_CUBE) if (Math.abs(lv - v) < Math.abs(best - v)) best = lv;
+      return best;
+    };
+    const cr = snap(r), cg = snap(g), cb = snap(b);
+    const cubeDist = (cr-r)*(cr-r) + (cg-g)*(cg-g) + (cb-b)*(cb-b);
+    let gi = Math.round(((r + g + b) / 3 - 8) / 10);
+    gi = Math.max(0, Math.min(23, gi));
+    const gv = 8 + gi * 10;
+    const grayDist = (gv-r)*(gv-r) + (gv-g)*(gv-g) + (gv-b)*(gv-b);
+    return grayDist < cubeDist ? [gv, gv, gv] : [cr, cg, cb];
+  }
+
+  // README §9 formulas for animated effects.
+  function noiseProbability(noisePct) { return (noisePct / 100) * 0.35; }
+  function tickInterval(animSpeedPct) {
+    if (!(animSpeedPct > 0)) return Infinity;
+    return Math.max(60, Math.round(1000 - (animSpeedPct / 100) * 940)); // 100% → 60ms
+  }
+  function glowShadow(glowPct) {
+    if (!(glowPct > 0)) return '';
+    const blur = (glowPct / 100) * 12;
+    let s = '0 0 ' + blur.toFixed(1) + 'px currentColor';
+    if (glowPct > 60) s += ', 0 0 ' + (blur * 2).toFixed(1) + 'px currentColor'; // layered ×2 above 60%
+    return s;
+  }
 
   // ─── Web Worker source ─────────────────────────────────────────────────────
   // Returns raw luminance grid (0–1) + per-cell RGB (Uint8Array, 3 bytes/cell).
@@ -182,6 +250,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
   function debounce(fn, ms) {
     let t;
     return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+
+  function definedOnly(o) {
+    const r = {};
+    for (const k in o) if (o[k] !== undefined) r[k] = o[k];
+    return r;
   }
 
   let _glyphMetricsCache = null;
@@ -393,11 +467,35 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         throw new Error('[ascii-engine] container must be a DOM Element');
       }
       this._el        = container;
-      this._opts      = this._normalizeOpts(opts);
+      // _userOpts holds only what the user explicitly set — presets are a
+      // baseline underneath it, so switching presets never leaks old preset
+      // values (Phase 3).
+      this._userOpts  = definedOnly(opts);
+      this._opts      = this._resolveOpts();
       this._worker    = null;
       this._ro        = null;
       this._grid      = null;
       this._rendering = null;
+      this._fx        = null;   // noise animation interval
+      this._rng       = null;
+      this._spans     = null;   // dom-mode glyph spans (for effects)
+      this._preEl     = null;   // pre-mode element + base text (for effects)
+      this._baseText  = null;
+      this._corrupted = null;
+    }
+
+    // preset baseline ← user overrides → normalized opts
+    _resolveOpts() {
+      const user = this._userOpts;
+      let preset = {};
+      if (user.preset != null) {
+        preset = PRESETS[user.preset];
+        if (!preset) {
+          console.warn('[ascii-engine] Unknown preset "' + user.preset + '" — using defaults.');
+          preset = {};
+        }
+      }
+      return this._normalizeOpts(Object.assign({}, preset, user));
     }
 
     // ── Public API ─────────────────────────────────────────────────────────
@@ -410,17 +508,22 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     update(newOpts) {
+      newOpts = definedOnly(newOpts || {});
       const prev = this._opts;
-      const merged = Object.assign({}, prev, newOpts);
-      // FIXES.md #1: prev opts carry a *computed* cols, which would always win
-      // over an incoming density. If density changes without an explicit cols,
-      // drop the stale cols so density can take effect.
-      if (newOpts && newOpts.density != null && newOpts.cols == null) delete merged.cols;
-      this._opts = this._normalizeOpts(merged);
+      // FIXES.md #1: a previously *computed* cols must not shadow an incoming
+      // density. If density changes without an explicit cols, drop stored cols.
+      if (newOpts.density != null && newOpts.cols == null) delete this._userOpts.cols;
+      // Same principle for preset switches: a new preset's density should win
+      // over a cols that an older preset's density produced.
+      if (newOpts.preset != null && newOpts.preset !== this._userOpts.preset && newOpts.cols == null) {
+        delete this._userOpts.cols;
+      }
+      Object.assign(this._userOpts, newOpts);
+      this._opts = this._resolveOpts();
       const o = this._opts;
 
       // Structural params: those that require re-sampling the image.
-      // Dithering, color, saturation are render-time — no re-run needed.
+      // Dithering, color, saturation, glow, noise are render-time — no re-run.
       const structural = o.src !== prev.src || o.cols !== prev.cols || o.edgeBlend !== prev.edgeBlend;
       if (structural || !this._grid) {
         return this.render(o.src || prev.src);
@@ -428,14 +531,17 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._paint(this._grid, o);
       this._applyA11y(o);
       if (o.fitMode === 'width') this._fitWidth(this._grid.cols);
+      this._startEffects();
       return Promise.resolve(this);
     }
 
     destroy() {
+      this._stopEffects();
       if (this._worker) { this._worker.terminate(); this._worker = null; }
       if (this._ro)     { this._ro.disconnect();    this._ro = null; }
       this._el.innerHTML = '';
       this._grid = null;
+      this._spans = null; this._preEl = null; this._baseText = null;
     }
 
     // ── Internal ───────────────────────────────────────────────────────────
@@ -467,8 +573,16 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         ditheringMode:raw.ditheringMode || 'fs',      // 'fs' | 'bayer'
         // Phase 2 — edge (structural; invalidates cache)
         edgeBlend:    raw.edgeBlend   != null ? Number(raw.edgeBlend)   : 0,
-        // Phase 3 stub
+        // Phase 3 — presets & effects (all render/style-time)
+        preset:       raw.preset      || null,
         seed:         raw.seed        != null ? Number(raw.seed)        : 0,
+        glow:         raw.glow        != null ? Math.max(0, Math.min(100, Number(raw.glow)))      : 0,
+        noise:        raw.noise       != null ? Math.max(0, Math.min(100, Number(raw.noise)))     : 0,
+        animSpeed:    raw.animSpeed   != null ? Math.max(0, Math.min(100, Number(raw.animSpeed))) : 0,
+        colorQuant:   raw.colorQuant  || 'none',   // 'none' | 'ansi256'
+        fg:           raw.fg          || null,     // preset color overrides →
+        bg:           raw.bg          || null,     //   set as inline --ascii-* vars
+        accent:       raw.accent      || null,
       };
     }
 
@@ -510,6 +624,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         this._fitWidth(grid.cols);
         this._setupResizeObserver();
       }
+      this._startEffects();
     }
 
     _runWorker(imageData, cols, rows) {
@@ -533,10 +648,24 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _paint(grid, opts) {
+      this._stopEffects(); // repaint invalidates span refs / base text
       if (opts.renderMode === 'pre') {
         this._renderPre(grid, opts);
       } else {
         this._renderDOM(grid, opts);
+      }
+      this._applyEffectStyles(opts);
+    }
+
+    // Glow (README §9: text-shadow 0 0 pct×12px currentColor, layered ×2 >60%)
+    // + preset color overrides as inline --ascii-* CSS vars, so theme mode and
+    // hover effects (Phase 5, --ascii-accent) keep working unchanged.
+    _applyEffectStyles(opts) {
+      this._el.style.textShadow = glowShadow(opts.glow);
+      if (this._el.style.setProperty) {
+        if (opts.fg)     this._el.style.setProperty('--ascii-fg', opts.fg);
+        if (opts.bg)     this._el.style.setProperty('--ascii-bg', opts.bg);
+        if (opts.accent) this._el.style.setProperty('--ascii-accent', opts.accent);
       }
     }
 
@@ -567,6 +696,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       });
       pre.textContent = text;
       this._el.appendChild(pre);
+      this._preEl = pre; this._baseText = text; this._spans = null;
     }
 
     _renderDOM(grid, opts) {
@@ -595,7 +725,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         userSelect: 'none',
       });
 
-      const frag = document.createDocumentFragment();
+      const frag  = document.createDocumentFragment();
+      const spans = [];
       for (let r = 0; r < grid.rows; r++) {
         const row = document.createElement('div');
         Object.assign(row.style, { display: 'block', whiteSpace: 'pre', lineHeight: '1em' });
@@ -615,14 +746,17 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
             let cb = grid.colors[idx * 3 + 2];
             if (satPct !== 100) { [cr, cg, cb] = applySaturation(cr, cg, cb, satPct); }
             if (blend > 0 && themeRGB) { [cr, cg, cb] = blendColors([cr, cg, cb], themeRGB, blend); }
+            if (opts.colorQuant === 'ansi256') { [cr, cg, cb] = quantizeAnsi256(cr, cg, cb); }
             sp.style.color = 'rgb(' + cr + ',' + cg + ',' + cb + ')';
           }
 
+          spans.push(sp);
           row.appendChild(sp);
         }
         frag.appendChild(row);
       }
       this._el.appendChild(frag);
+      this._spans = spans; this._preEl = null; this._baseText = null;
     }
 
     _applyA11y(opts) {
@@ -665,6 +799,60 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       });
     }
 
+    // ── Noise animation (Phase 3) ──────────────────────────────────────────
+    // Seeded, reproducible glyph corruption (README §9: per-tick cell-flip
+    // probability 0→0.35). Style-only — the cached grid and pipeline are never
+    // touched. Under prefers-reduced-motion the static clean frame stays
+    // (README §6: animated presets render their static final frame).
+
+    _startEffects() {
+      this._stopEffects();
+      const o = this._opts;
+      if (!(o.noise > 0) || prefersReducedMotion()) return;
+      const interval = tickInterval(o.animSpeed);
+      if (!isFinite(interval) || typeof setInterval === 'undefined') return;
+      this._rng = mulberry32(o.seed || 0);
+      this._fx  = setInterval(() => this._noiseTick(), interval);
+    }
+
+    _stopEffects() {
+      if (this._fx) { clearInterval(this._fx); this._fx = null; }
+      this._restoreNoise();
+    }
+
+    _restoreNoise() {
+      if (this._corrupted) {
+        for (const { el, ch } of this._corrupted) el.textContent = ch;
+        this._corrupted = null;
+      }
+      if (this._preEl && this._baseText != null) this._preEl.textContent = this._baseText;
+    }
+
+    _noiseTick() {
+      const o = this._opts;
+      const p = noiseProbability(o.noise);
+      const charset = resolveCharset(o.charset);
+      const rng = this._rng || (this._rng = mulberry32(o.seed || 0));
+      this._restoreNoise();
+
+      if (this._spans) {
+        const corrupted = [];
+        for (const sp of this._spans) {
+          if (rng() < p) {
+            corrupted.push({ el: sp, ch: sp.textContent });
+            sp.textContent = charset[(rng() * charset.length) | 0];
+          }
+        }
+        this._corrupted = corrupted;
+      } else if (this._preEl && this._baseText != null) {
+        const chars = this._baseText.split('');
+        for (let i = 0; i < chars.length; i++) {
+          if (chars[i] !== '\n' && rng() < p) chars[i] = charset[(rng() * charset.length) | 0];
+        }
+        this._preEl.textContent = chars.join('');
+      }
+    }
+
     _setupResizeObserver() {
       if (this._ro) return;
       // FIXES.md #2: read cols from the live grid at fire time — a captured
@@ -704,6 +892,14 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       'data-ascii-dither':        'dither',
       'data-ascii-dithering-mode':'ditheringMode',
       'data-ascii-seed':          'seed',
+      'data-ascii-edge-blend':    'edgeBlend',
+      'data-ascii-glow':          'glow',
+      'data-ascii-noise':         'noise',
+      'data-ascii-anim-speed':    'animSpeed',
+      'data-ascii-color-quant':   'colorQuant',
+      'data-ascii-fg':            'fg',
+      'data-ascii-bg':            'bg',
+      'data-ascii-accent':        'accent',
     };
     for (const [attr, key] of Object.entries(attrs)) {
       if (config[key] != null) continue;
@@ -745,10 +941,13 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
   ASCIIEngine.prefersReducedMotion = prefersReducedMotion;
   Object.defineProperty(ASCIIEngine, 'cacheSize', { get: () => _gridCache.size, configurable: true });
 
+  ASCIIEngine.PRESETS = PRESETS;
+
   // Internals exposed for the test harness only — not public API.
   ASCIIEngine._internals = {
     applyEdgeBlend, normalizeEdgeBlend, measureGlyphAspect, toneValue,
     toneAndDither, popcount, densityToCols,
+    mulberry32, quantizeAnsi256, noiseProbability, tickInterval, glowShadow,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = ASCIIEngine;

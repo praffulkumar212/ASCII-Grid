@@ -5,10 +5,12 @@
 class Element {
   constructor(tag) {
     this.tagName = (tag || 'div').toUpperCase();
-    this.style = {}; this.dataset = {}; this.children = [];
+    this.dataset = {}; this.children = [];
     this.parentNode = null; this.parentElement = null;
     this.attributes = {}; this.textContent = ''; this.id = '';
     this.className = ''; this.offsetWidth = 600;
+    const self = this;
+    this.style = { setProperty: (k, v) => { self.style[k] = v; } };
   }
   appendChild(ch) {
     if (ch instanceof DocumentFragment) { ch.children.forEach(c => this.appendChild(c)); ch.children = []; return ch; }
@@ -163,6 +165,89 @@ function check(name, ok, extra) {
   e3._grid = grid; e3._paint(grid, e3._opts);
   check('pre mode renders <pre> with newline rows', el3.children[0].tagName === 'PRE' && el3.children[0].textContent.split('\n').length === 10);
 
+  // ── Phase 3 ─────────────────────────────────────────────────────────────
+
+  // Presets: 13, default included, JSON file in sync with engine
+  const presetNames = Object.keys(ASCIIEngine.PRESETS);
+  check('P3: 13 presets incl. theme-adaptive', presetNames.length === 13 && presetNames.includes('theme-adaptive'),
+        presetNames.length + ' presets');
+  const jsonPresets = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'presets', 'presets.json'), 'utf8'));
+  check('P3: presets/presets.json matches ASCIIEngine.PRESETS',
+        JSON.stringify(jsonPresets) === JSON.stringify(ASCIIEngine.PRESETS));
+
+  // Preset resolution: baseline applies, user overrides win
+  const eBp = new ASCIIEngine(new Element('div'), { preset: 'blueprint', alt: 'x' });
+  check('P3: preset baseline applies (blueprint → edgeBlend 0.85, cols 170)',
+        eBp._opts.edgeBlend === 0.85 && eBp._opts.cols === 170,
+        'edge=' + eBp._opts.edgeBlend + ' cols=' + eBp._opts.cols);
+  const eOv = new ASCIIEngine(new Element('div'), { preset: 'blueprint', contrast: 90, alt: 'x' });
+  check('P3: explicit option beats preset (contrast 90 over 45)', eOv._opts.contrast === 90);
+
+  // Preset switching never leaks old preset values
+  eBp._grid = grid; eBp._userOpts.src = 'fake';
+  try { await eBp.update({ preset: 'classic-mono' }); } catch (_) {}
+  check('P3: preset switch clears old preset fields (edgeBlend 0.85→0, density recomputed)',
+        eBp._opts.edgeBlend === 0 && eBp._opts.cols === 150,
+        'edge=' + eBp._opts.edgeBlend + ' cols=' + eBp._opts.cols);
+
+  // Seeded RNG: deterministic, README §9 formulas
+  const r1 = I.mulberry32(1337), r2 = I.mulberry32(1337);
+  const seq1 = [r1(), r1(), r1()], seq2 = [r2(), r2(), r2()];
+  check('P3: mulberry32 deterministic for equal seeds', JSON.stringify(seq1) === JSON.stringify(seq2));
+  check('P3: noise probability maps 0→0, 100→0.35',
+        I.noiseProbability(0) === 0 && Math.abs(I.noiseProbability(100) - 0.35) < 1e-9);
+  check('P3: tick interval maps 100→60ms, 0→∞',
+        I.tickInterval(100) === 60 && I.tickInterval(0) === Infinity);
+
+  // Glow formula: single shadow ≤60%, layered ×2 above
+  check('P3: glow 50 → single shadow, glow 80 → layered ×2',
+        I.glowShadow(50) === '0 0 6.0px currentColor' && I.glowShadow(80).split(',').length === 2 && I.glowShadow(0) === '');
+
+  // ANSI-256 quantization
+  const q = I.quantizeAnsi256;
+  check('P3: ansi256 exact corners preserved, mids snapped to palette',
+        JSON.stringify(q(0,0,0)) === '[0,0,0]' && JSON.stringify(q(255,0,0)) === '[255,0,0]'
+        && JSON.stringify(q(100,100,100)) === '[98,98,98]');
+
+  // Noise tick: seeded corruption + full restore, cache untouched
+  const elN = new Element('div'); new Element('div').appendChild(elN);
+  const eN = new ASCIIEngine(elN, { cols: 40, alt: 'x', fitMode: 'fixed', noise: 60, seed: 1337 });
+  eN._grid = grid; eN._paint(grid, eN._opts);
+  const cleanText = grabText(elN);
+  eN._noiseTick();
+  const noisyText = grabText(elN);
+  const flipped = [...cleanText].filter((c, i) => c !== noisyText[i]).length;
+  check('P3: seeded noise tick corrupts ~21% of cells (0.6×0.35)', flipped > 40 && flipped < 130,
+        flipped + '/400 flipped');
+  eN._noiseTick();
+  const noisy2 = grabText(elN);
+  eN._restoreNoise();
+  check('P3: restore returns to clean frame', grabText(elN) === cleanText);
+  check('P3: noise leaves cached grid untouched', grid.brightness.slice(0,400).join(',') === before);
+  const eN2 = new ASCIIEngine(new Element('div'), { cols: 40, alt: 'x', fitMode: 'fixed', noise: 60, seed: 1337 });
+  // determinism across engines: same seed → same first-tick corruption pattern
+  const elN2 = new Element('div'); new Element('div').appendChild(elN2);
+  const eN3 = new ASCIIEngine(elN2, { cols: 40, alt: 'x', fitMode: 'fixed', noise: 60, seed: 1337 });
+  eN3._grid = grid; eN3._paint(grid, eN3._opts); eN3._noiseTick();
+  check('P3: same seed → identical corruption pattern', grabText(elN2) === noisyText);
+  eN.destroy(); eN3.destroy();
+
+  // ANSI preset wires quantization into the DOM color path
+  const elQ = new Element('div'); new Element('div').appendChild(elQ);
+  const eQ = new ASCIIEngine(elQ, { preset: 'ansi-256', cols: 40, alt: 'x', fitMode: 'fixed' });
+  eQ._grid = grid; eQ._paint(grid, eQ._opts);
+  const qColors = elQ.children.flatMap(r => r.children).map(s => s.style.color).filter(Boolean);
+  const palette = new Set([0,95,135,175,215,255, ...Array.from({length:24},(_,i)=>8+10*i)]);
+  const allOnPalette = qColors.length > 0 && qColors.every(c => c.match(/\d+/g).every(v => palette.has(+v)));
+  check('P3: ansi-256 preset → every span color on xterm palette', allOnPalette, qColors.length + ' colored spans');
+
+  // Glow + fg/bg land on container styles
+  const elG = new Element('div'); new Element('div').appendChild(elG);
+  const eG = new ASCIIEngine(elG, { preset: 'crt', cols: 40, alt: 'x', fitMode: 'fixed' });
+  eG._grid = grid; eG._paint(grid, eG._opts);
+  check('P3: crt preset applies glow shadow + fg/bg vars',
+        /currentColor/.test(elG.style.textShadow) && elG.style['--ascii-fg'] === '#33ff33' && elG.style['--ascii-bg'] === '#031103');
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
-  if (fail > 0) process.exit(1);
+  process.exit(fail > 0 ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(1); });

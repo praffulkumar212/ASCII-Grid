@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ascii-engine — Phase 2 test</title>
+  <title>ascii-engine — Phase 3 test</title>
   <style>
     :root {
       --ascii-fg: #1a1a1a;
@@ -28,8 +28,8 @@
   </style>
 </head>
 <body>
-  <h1 style="font-size:1.3rem;margin:0 0 0.1rem">ascii-engine — Phase 2</h1>
-  <p style="font-size:0.8rem;color:#888;margin:0 0 1rem">Source color · themeBlend · saturation · dithering</p>
+  <h1 style="font-size:1.3rem;margin:0 0 0.1rem">ascii-engine — Phase 3</h1>
+  <p style="font-size:0.8rem;color:#888;margin:0 0 1rem">Presets · seeded noise · glow · ANSI-256 · (+ all Phase 2 controls)</p>
 
   <!-- ── Input ── -->
   <h2>Image</h2>
@@ -42,6 +42,42 @@
     <div>
       <label>Or pick a file (auto-renders)</label>
       <input id="imgFile" type="file" accept="image/*">
+    </div>
+  </div>
+
+  <!-- ── Preset ── -->
+  <h2>Preset (Phase 3)</h2>
+  <div class="controls">
+    <div>
+      <label>Preset — applies its own settings; “Custom” uses the sliders below</label>
+      <select id="preset">
+        <option value="custom" selected>Custom (use sliders)</option>
+        <option value="theme-adaptive">Theme Adaptive (default)</option>
+        <option value="classic-mono">Classic Mono</option>
+        <option value="matrix-rain">Matrix Rain</option>
+        <option value="blueprint">Blueprint</option>
+        <option value="crt">CRT</option>
+        <option value="halftone">Halftone</option>
+        <option value="braille">Braille</option>
+        <option value="blocks">Blocks</option>
+        <option value="line-art">Line-Art</option>
+        <option value="cyberpunk">Cyberpunk</option>
+        <option value="glitch">Glitch</option>
+        <option value="faded">Faded</option>
+        <option value="ansi-256">ANSI-256</option>
+      </select>
+    </div>
+    <div>
+      <label>Glow — <span id="glowVal">0</span>%</label>
+      <input id="glow" type="range" min="0" max="100" value="0">
+    </div>
+    <div>
+      <label>Noise — <span id="noiseVal">0</span>% <em style="font-size:0.75rem;color:#888">(seeded)</em></label>
+      <input id="noise" type="range" min="0" max="100" value="0">
+    </div>
+    <div>
+      <label>Anim speed — <span id="animSpeedVal">0</span>%</label>
+      <input id="animSpeed" type="range" min="0" max="100" value="0">
     </div>
   </div>
 
@@ -155,6 +191,9 @@
         themeBlend:   Number(document.getElementById('themeBlend').value),
         dither:       Number(document.getElementById('dither').value) / 100,
         ditheringMode:document.getElementById('ditheringMode').value,
+        glow:         Number(document.getElementById('glow').value),
+        noise:        Number(document.getElementById('noise').value),
+        animSpeed:    Number(document.getElementById('animSpeed').value),
         fitMode:      'width',
         alt:          'ASCII art render of uploaded image',
       };
@@ -162,15 +201,20 @@
 
     async function doRender(src) {
       if (!src) { status('No image source.'); return; }
-      const opts = { ...getOpts(), src };
+      const presetSel = document.getElementById('preset').value;
+      // Preset mode passes ONLY the preset (plus src/alt) so the preset's own
+      // settings apply; custom mode sends the sliders. Engine is recreated on
+      // each render so modes never leak into each other — cheap, grid is cached.
+      const opts = presetSel === 'custom'
+        ? { ...getOpts(), src }
+        : { preset: presetSel, src, fitMode: 'width', alt: 'ASCII art render of uploaded image' };
       status('Rendering…');
       const t0 = performance.now();
       try {
-        if (!engine) {
+        if (engine) { engine.destroy(); engine = null; }
+        {
           engine = new ASCIIEngine(artEl, opts);
           await engine.render(src);
-        } else {
-          await engine.update(opts);
         }
         const g = engine._grid;
         status('Done in ' + (performance.now() - t0).toFixed(0) + ' ms  |  ' +
@@ -191,6 +235,9 @@
       saturation: (v) => document.getElementById('saturationVal').textContent = v,
       themeBlend: (v) => document.getElementById('themeBlendVal').textContent = v,
       dither:     (v) => document.getElementById('ditherVal').textContent = v,
+      glow:       (v) => document.getElementById('glowVal').textContent = v,
+      noise:      (v) => document.getElementById('noiseVal').textContent = v,
+      animSpeed:  (v) => document.getElementById('animSpeedVal').textContent = v,
     };
     Object.keys(sliders).forEach((id) => {
       document.getElementById(id).addEventListener('input', (e) => sliders[id](e.target.value));
@@ -208,10 +255,10 @@
     });
 
     // Live-update on control changes (re-renders from cache when possible)
-    ['charset','renderMode','colorMode','ditheringMode'].forEach((id) => {
+    ['charset','renderMode','colorMode','ditheringMode','preset'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => { if (imgSrc) doRender(imgSrc); });
     });
-    ['contrast','gamma','saturation','themeBlend','dither','density'].forEach((id) => {
+    ['contrast','gamma','saturation','themeBlend','dither','density','glow','noise','animSpeed'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => { if (imgSrc) doRender(imgSrc); });
     });
 

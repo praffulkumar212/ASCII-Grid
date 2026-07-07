@@ -13,7 +13,13 @@ ASCII art generator for interactive article thumbnails/graphics on Prafful's web
 - `examples/` — sample images + demo embeds for manual testing
 
 ## Current status
-Phase 1 (core engine) — not started. Build phases are in README §12; do not pull work forward from later phases, but don't paint them into a corner either (e.g. DOM glyphs get `data-brightness`/`data-cell` from day one for the future hover system).
+Phases 1–3 complete (engine v0.3.0): core pipeline, color/theme/dithering, and
+the preset system (13 presets, seeded noise, glow, ANSI-256). FIXES.md items
+1–6 fixed; item 7 (theme-toggle repaint for source+themeBlend) still open.
+Next: Phase 4 — Playground (see README §10 and §12). Tests: `node
+test/engine.test.js` (35 checks) — keep passing and extend with new work.
+Presets live in both `src/ascii-engine.js` (PRESETS) and `presets/presets.json`;
+they must stay identical (test-enforced).
 
 ## Non-negotiables (from the plan)
 - **Aspect-ratio correction** in sampling (~2:1 glyph height) is a Phase 1 requirement, not polish
