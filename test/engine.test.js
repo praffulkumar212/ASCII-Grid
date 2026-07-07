@@ -520,6 +520,42 @@ function check(name, ok, extra) {
     return I.estimateBackgroundMask(grid, 0.12) === null;
   })());
 
+  // maskInvert + maskFill
+  check('MASK: maskInvert flips the lasso (art outside the region)', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed',
+      mask: [[0, 0], [0.5, 0], [0.5, 1], [0, 1]], maskInvert: true });
+    e._grid = grid; e._paint(grid, e._opts);
+    const row = el.children[0].children.map(s => s.textContent).join(''); // top row: gradient
+    const ok = row.slice(0, 18).trim() === '' && row.slice(22).trim() !== '';
+    e.destroy();
+    return ok;
+  })());
+  check('MASK: maskFill color paints masked cells only', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed',
+      mask: [[0, 0], [0.5, 0], [0.5, 1], [0, 1]], maskFill: '#123456' });
+    e._grid = grid; e._paint(grid, e._opts);
+    const masked = el.children[5].children[30], visible = el.children[5].children[5];
+    const ok = masked.style.backgroundColor === '#123456' && (visible.style.backgroundColor || '') === '';
+    e.destroy();
+    return ok;
+  })());
+  check('MASK: maskFill image attaches an aria-hidden underlay; removed when off', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed', src: 'x.png',
+      mask: [[0, 0], [0.5, 0], [0.5, 1], [0, 1]], maskFill: 'image' });
+    e._grid = grid; e._paint(grid, e._opts);
+    const u = e._underlay;
+    const attached = u && u.getAttribute('aria-hidden') === 'true'
+      && (el.children[0] === u || u.parentNode === el);
+    e._opts = Object.assign({}, e._opts, { maskFill: 'none' });
+    e._paint(grid, e._opts);
+    const detached = !el.children.includes(u);
+    e.destroy();
+    return attached && detached;
+  })());
+
   // auto-contrast
   check('ART: autoContrast stretches a flat ramp to full range', (() => {
     const flat = new Float32Array(400);

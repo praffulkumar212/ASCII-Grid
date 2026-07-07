@@ -193,6 +193,17 @@
   <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
     <input type="checkbox" id="c-maskBackground" style="width:auto"> Remove background
     <span class="val">(flat-color bg → empty)</span></label></div>
+  <div><label style="display:flex;align-items:center;gap:.4rem;margin-top:1.1rem">
+    <input type="checkbox" id="c-maskInvert" style="width:auto"> Invert mask
+    <span class="val">(art outside the lasso)</span></label></div>
+  <div><label>Masked area shows</label>
+    <select id="c-maskFill">
+      <option value="none">Nothing (empty)</option>
+      <option value="image">Original image</option>
+      <option value="color">Flat color ↓</option>
+    </select></div>
+  <div><label>Mask fill color</label>
+    <input type="color" id="c-maskFillColor" value="#14141c" style="width:100%;height:2rem;padding:.1rem"></div>
   <div><label>Hover effect <span class="val">(move cursor over art)</span></label>
     <select id="c-hoverEffect">
       <option value="none">None</option>
@@ -445,6 +456,13 @@
     });
     $('c-autoContrast').checked = !!o.autoContrast;
     $('c-maskBackground').checked = !!o.maskBackground;
+    $('c-maskInvert').checked = !!o.maskInvert;
+    if (o.maskFill === 'none' || o.maskFill === 'image') {
+      $('c-maskFill').value = o.maskFill;
+    } else if (o.maskFill) {
+      $('c-maskFill').value = 'color';
+      $('c-maskFillColor').value = o.maskFill;
+    }
     lassoLabel();
   }
 
@@ -452,8 +470,9 @@
     preset = name;
     // reset tweaks, but masks are about the image, not the style — keep them
     const kept = {};
-    if (overrides.mask) kept.mask = overrides.mask;
-    if (overrides.maskBackground) kept.maskBackground = overrides.maskBackground;
+    for (const k of ['mask', 'maskBackground', 'maskInvert', 'maskFill']) {
+      if (overrides[k] != null && overrides[k] !== 'none') kept[k] = overrides[k];
+    }
     overrides = kept;
     document.querySelectorAll('.tile').forEach((t) => t.classList.toggle('active', t.dataset.preset === name));
     if (!src) return;
@@ -478,6 +497,15 @@
   $('c-alt').addEventListener('change', () => { if (engine) engine.update({ alt: altText() }); });
   $('c-autoContrast').addEventListener('change', (e) => { overrides.autoContrast = e.target.checked; debouncedUpdate(); });
   $('c-maskBackground').addEventListener('change', (e) => { overrides.maskBackground = e.target.checked; debouncedUpdate(); });
+  $('c-maskInvert').addEventListener('change', (e) => { overrides.maskInvert = e.target.checked; debouncedUpdate(); });
+  function maskFillValue() {
+    const v = $('c-maskFill').value;
+    return v === 'color' ? $('c-maskFillColor').value : v;
+  }
+  $('c-maskFill').addEventListener('change', () => { overrides.maskFill = maskFillValue(); debouncedUpdate(); });
+  $('c-maskFillColor').addEventListener('change', () => {
+    if ($('c-maskFill').value === 'color') { overrides.maskFill = maskFillValue(); debouncedUpdate(); }
+  });
 
   function altText() { return $('c-alt').value.trim() || 'ASCII art'; }
   function currentOverrides() { return Object.assign({}, overrides, { alt: altText() }); }

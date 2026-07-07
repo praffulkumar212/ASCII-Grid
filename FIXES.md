@@ -149,10 +149,25 @@ Fix direction:
   glyphs (`edgeStyle: 'line'`, y-down bucketing); blueprint & line-art presets
   upgraded.
 - **Auto-contrast** — optional 2%/98% percentile stretch over *visible* cells.
+- **v0.6.1: maskBackground** — flood-fill removal of flat-color *opaque*
+  backgrounds (the reported icon had opaque black, not transparency); bails on
+  busy borders so photos are untouched.
+- **v0.6.2: maskFill + maskInvert** — masked areas can show the original image
+  (dom underlay / canvas drawImage) or a flat color; maskInvert renders art
+  outside the lasso. Playground: invert checkbox, fill select + color picker.
 
 ## 12. PARKED BACKLOG — do not pick up unprompted
 
-Product ideas discussed and deliberately parked (with #9 video export):
+**Layer compositor (headline item — pairs with the planned UI/interaction
+overhaul).** Multiple engine instances stacked in one container, each with its
+own preset/animation/mask + maskInvert for complements. Grid sampling is
+already shared via the global cache, so N layers ≈ 1 sampling pass. Needs:
+`ASCIIEngine.compose(el, {src, layers:[…]})` helper (~60 lines), z-order
+management, per-layer playground UI (layer list, reorder, solo/hide — mini
+Figma layers panel). Perf guidance: canvas mode for dense/animated layered
+comps; DOM fine for 2 layers at moderate density.
+
+Also parked (with #9 video export):
 - Config-in-URL sharing (playground state in the hash)
 - Saved/named custom presets (localStorage)
 - Batch mode (one style → many images)

@@ -1,6 +1,6 @@
 {
   "name": "ascii-engine",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Zero-dependency ASCII art engine for interactive, theme-adaptive article graphics",
   "main": "src/ascii-engine.js",
   "private": true,

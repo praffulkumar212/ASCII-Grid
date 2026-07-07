@@ -1,5 +1,5 @@
 /*!
- * ascii-engine.js — v0.6.0
+ * ascii-engine.js — v0.6.2
  * Phase 1: image → brightness grid → dom/pre render, fitMode, caching, a11y
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
  * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
@@ -485,6 +485,11 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         }
       }
     }
+    // maskInvert: art renders where it *wouldn't* have (e.g. everything
+    // except the lasso). Only meaningful when some mask exists.
+    if (opts.maskInvert && mask) {
+      for (let i = 0; i < N; i++) mask[i] = mask[i] ? 0 : 1;
+    }
     return mask; // null = everything visible
   }
 
@@ -688,6 +693,9 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._warnedSize    = false;
       this._mask          = null;   // v0.6: alpha/lasso mask (1=visible)
       this._noisePool     = null;   // eligible cell indices when masked
+      this._underlay      = null;   // maskFill:'image' underlay element
+      this._img           = null;   // loaded source image (canvas maskFill)
+      this._imgSrc        = '';
     }
 
     // preset baseline ← user overrides → normalized opts
@@ -751,6 +759,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._grid = null;
       this._spans = null; this._preEl = null; this._baseText = null;
       this._canvasMeta = null; this._canvasHoverPrev = null; this._paintGrid = null;
+      this._underlay = null; this._img = null; this._imgSrc = '';
     }
 
     // ── Internal ───────────────────────────────────────────────────────────
@@ -815,6 +824,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         maskAlpha:     !(raw.maskAlpha === false || raw.maskAlpha === 'false'), // default true
         maskBackground: raw.maskBackground === true || raw.maskBackground === 'true',
         mask:          Array.isArray(raw.mask) && raw.mask.length >= 3 ? raw.mask : null,
+        maskInvert:    raw.maskInvert === true || raw.maskInvert === 'true',
+        maskFill:      raw.maskFill || 'none',   // 'none' | 'image' | CSS color
         autoContrast:  raw.autoContrast === true || raw.autoContrast === 'true',
         edgeStyle:     raw.edgeStyle === 'line' ? 'line' : 'shade',
       };
@@ -836,6 +847,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         grid = _gridCache.get(key);
       } else {
         const img  = (typeof imageOrSrc === 'string' || !imageOrSrc) ? await loadImage(src) : imageOrSrc;
+        this._img = img; this._imgSrc = src; // reused by canvas maskFill:'image'
         const imgW = img.naturalWidth  || img.width;
         const imgH = img.naturalHeight || img.height;
         const rows = Math.max(1, Math.round(opts.cols * (imgH / imgW) / opts.glyphAspect));
@@ -851,6 +863,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
           };
         }
         _gridCache.set(key, grid);
+      }
+
+      // canvas maskFill:'image' draws the source directly — make sure we hold it
+      if (opts.maskFill === 'image' && opts.renderMode === 'canvas'
+          && (!this._img || this._imgSrc !== src)) {
+        try { this._img = await loadImage(src); this._imgSrc = src; } catch (_) { /* fill skipped */ }
       }
 
       this._grid = grid;
@@ -918,8 +936,37 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         this._renderDOM(grid, opts);
       }
       this._applyEffectStyles(opts);
+      this._applyMaskFill(opts);
       this._setupHover();
       this._setupEntrance();
+    }
+
+    // maskFill:'image' — the original image shows through wherever the mask
+    // cuts the art away (dom mode: absolutely-positioned underlay <img>).
+    _applyMaskFill(opts) {
+      const wantImage = opts.maskFill === 'image' && opts.renderMode !== 'canvas'
+        && this._mask && opts.src;
+      if (wantImage) {
+        if (!this._underlay) {
+          const img = document.createElement('img');
+          img.alt = '';
+          img.setAttribute('aria-hidden', 'true');
+          Object.assign(img.style, {
+            position: 'absolute', left: '0', top: '0',
+            width: '100%', height: '100%', zIndex: '0',
+          });
+          this._underlay = img;
+        }
+        if (this._underlay.src !== opts.src) this._underlay.src = opts.src;
+        this._el.style.position = 'relative';
+        if (this._el.children && this._el.children[0] !== this._underlay) {
+          this._el.insertBefore(this._underlay, this._el.children[0] || null);
+        } else if (!this._el.children) {
+          this._el.insertBefore(this._underlay, null);
+        }
+      } else if (this._underlay) {
+        this._underlay.remove();
+      }
     }
 
     // ── Canvas render mode (Phase 6) ───────────────────────────────────────
@@ -1002,6 +1049,22 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.shadowBlur = sb;
       }
+      // maskFill: image behind everything, or flat color under masked cells only
+      if (opts.maskFill === 'image' && this._img) {
+        const sb = ctx.shadowBlur; ctx.shadowBlur = 0;
+        try { ctx.drawImage(this._img, 0, 0, canvas.width, canvas.height); } catch (_) {}
+        ctx.shadowBlur = sb;
+      } else if (opts.maskFill && opts.maskFill !== 'none' && opts.maskFill !== 'image' && this._mask) {
+        const sb = ctx.shadowBlur; ctx.shadowBlur = 0;
+        ctx.fillStyle = opts.maskFill;
+        for (let i = 0; i < chars.length; i++) {
+          if (!this._mask[i]) {
+            const r = (i / grid.cols) | 0, c = i % grid.cols;
+            ctx.fillRect(c * cw, r * ch, cw, ch);
+          }
+        }
+        ctx.shadowBlur = sb;
+      }
       for (let i = 0; i < chars.length; i++) {
         if (chars[i] === ' ') continue;
         const r = (i / grid.cols) | 0, c = i % grid.cols;
@@ -1081,15 +1144,22 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
       // PERF fast path: same grid dimensions → patch spans in place. Slider
       // tuning (contrast, dither, color, charset…) never rebuilds 10k+ nodes.
+      // maskFill color: masked cells become flat backdrop cells
+      const fillColor = opts.maskFill && opts.maskFill !== 'none' && opts.maskFill !== 'image'
+        ? opts.maskFill : '';
+
       if (this._spans && this._spans.length === grid.rows * grid.cols && !this._canvasMeta) {
         const spans = this._spans;
         const gridChanged = this._paintGrid !== grid;
         for (let i = 0; i < spans.length; i++) {
           const sp = spans[i];
+          const masked = this._mask && !this._mask[i];
           const ch = this._charFor(prep, charset, i);
           if (sp.textContent !== ch) sp.textContent = ch;
-          const col = this._mask && !this._mask[i] ? '' : colorOf(i);
+          const col = masked ? '' : colorOf(i);
           if ((sp.style.color || '') !== col) sp.style.color = col;
+          const bgc = masked && fillColor ? fillColor : '';
+          if ((sp.style.backgroundColor || '') !== bgc) sp.style.backgroundColor = bgc;
           if (gridChanged) sp.dataset.brightness = grid.brightness[i].toFixed(3);
         }
         this._buildNoisePool();
@@ -1116,19 +1186,22 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       const spans = [];
       for (let r = 0; r < grid.rows; r++) {
         const row = document.createElement('div');
-        Object.assign(row.style, { display: 'block', whiteSpace: 'pre', lineHeight: '1em' });
+        // position:relative keeps glyph rows above the maskFill:'image' underlay
+        Object.assign(row.style, { display: 'block', whiteSpace: 'pre', lineHeight: '1em', position: 'relative' });
 
         for (let c = 0; c < grid.cols; c++) {
           const idx = r * grid.cols + c;
           const raw = grid.brightness[idx];  // raw luminance for data-brightness
+          const masked = this._mask && !this._mask[idx];
           const ch  = this._charFor(prep, charset, idx);
           const sp  = document.createElement('span');
           sp.textContent        = ch;
           sp.dataset.brightness = raw.toFixed(3);
           sp.dataset.cell       = r + ',' + c;
 
-          const col = this._mask && !this._mask[idx] ? '' : colorOf(idx);
+          const col = masked ? '' : colorOf(idx);
           if (col) sp.style.color = col;
+          if (masked && fillColor) sp.style.backgroundColor = fillColor;
 
           spans.push(sp);
           row.appendChild(sp);
@@ -1657,6 +1730,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       'data-ascii-auto-contrast': 'autoContrast',
       'data-ascii-mask-alpha':    'maskAlpha',
       'data-ascii-mask-background':'maskBackground',
+      'data-ascii-mask-invert':   'maskInvert',
+      'data-ascii-mask-fill':     'maskFill',
       // mask polygons travel via data-ascii-config JSON
     };
     for (const [attr, key] of Object.entries(attrs)) {

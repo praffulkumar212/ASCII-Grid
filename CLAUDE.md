@@ -23,11 +23,12 @@ docs at `docs/index.html`.
 Still open: FIXES.md #7 (theme-toggle repaint for source+themeBlend —
 playground re-renders as workaround); canvas hover is highlight-semantics only.
 PARKED (user decision — do not pick up unprompted): FIXES.md #9 video export
-and the full #12 backlog list (URL sharing, saved presets, batch, Figma plugin,
+and the full #12 backlog (headline: layer compositor — goes with the planned
+UI/interaction overhaul; plus URL sharing, saved presets, batch, Figma plugin,
 golden tests, CORS UX, SSR mode, braille dot-matrix, Safari pass).
-Shipped: #8 relative hover radius (v0.5.1); #10 QA round (v0.5.2); #11 v0.6.0 —
-alpha masking (default), lasso region mask, edge-direction line glyphs,
-auto-contrast.
+Shipped: #8 relative hover radius (v0.5.1); #10 QA round (v0.5.2); #11 —
+v0.6.0 alpha+lasso masking, edge-direction glyphs, auto-contrast; v0.6.1
+maskBackground flood fill; v0.6.2 maskFill (image/color) + maskInvert.
 Tests: `npm test` = `node test/engine.test.js` (54 checks) — keep passing and
 extend. Presets in `src/ascii-engine.js` (PRESETS) and `presets/presets.json`
 must stay identical (test-enforced). After touching src/, re-run `npm run build`
