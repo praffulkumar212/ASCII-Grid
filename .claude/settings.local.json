@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(open *)",
-      "Bash(node --check /Users/Prafful/Desktop/ascii/src/ascii-engine.js)"
-    ]
-  }
-}
