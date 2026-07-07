@@ -362,8 +362,13 @@
   #art {
     display: grid;
     align-content: center;
-    width: min(100%, 920px);
+    justify-content: center;
+    width: 100%;
     min-height: 320px;
+  }
+  #art > canvas {
+    max-width: 100%;
+    height: auto;
   }
   #preview-wrap:not(.has-source) #art { display: none; }
   #preview-wrap.has-source #sourcePanel { display: none; }
@@ -872,7 +877,7 @@
   });
   document.addEventListener('fullscreenchange', () => {
     $('fsBtn').textContent = document.fullscreenElement ? '⛶ Exit' : '⛶ Fullscreen';
-    // ResizeObserver refits the art to the new container width automatically
+    fitPreviewArt();
   });
 
   // ── Step 1: input ────────────────────────────────────────────────────────
@@ -1034,16 +1039,60 @@
   function debounce(fn, ms) { let t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; }
 
   // ── render main preview ──────────────────────────────────────────────────
+  const fitPreviewArt = debounce(() => {
+    if (!engine || !engine._grid) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const wrap = $('preview-wrap');
+        const styles = getComputedStyle(wrap);
+        const availW = Math.max(1, wrap.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight));
+        const availH = Math.max(1, wrap.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom));
+        const canvas = artEl.querySelector('canvas');
+        const grid = engine._grid;
+
+        artEl.style.width = availW + 'px';
+        if (canvas) {
+          const naturalW = canvas.width || canvas.offsetWidth || availW;
+          const naturalH = canvas.height || canvas.offsetHeight || availH;
+          const scale = Math.min(availW / naturalW, availH / naturalH);
+          canvas.style.width = Math.max(1, Math.floor(naturalW * scale)) + 'px';
+          canvas.style.height = Math.max(1, Math.floor(naturalH * scale)) + 'px';
+          artEl.style.minHeight = canvas.style.height;
+          return;
+        }
+
+        const currentSize = parseFloat(getComputedStyle(artEl).fontSize) || 16;
+        const boxes = [...artEl.children].filter((el) => el.id !== 'ascii-sr-label');
+        const bounds = boxes.reduce((acc, el) => {
+          const rect = el.getBoundingClientRect();
+          acc.w = Math.max(acc.w, rect.width);
+          acc.h += rect.height;
+          return acc;
+        }, { w: 0, h: 0 });
+        const contentW = Math.max(1, bounds.w);
+        const contentH = Math.max(1, bounds.h || artEl.scrollHeight);
+        const scale = Math.min(availW / contentW, availH / contentH);
+        const nextSize = currentSize * scale;
+        artEl.style.fontSize = nextSize + 'px';
+        artEl.style.lineHeight = '1em';
+        artEl.style.minHeight = Math.min(availH, Math.max(1, grid.rows * nextSize)) + 'px';
+      });
+    });
+  }, 40);
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(fitPreviewArt).observe($('preview-wrap'));
+  }
+
   function render(fresh) {
     if (!src) { status('No image yet.'); return; }
     status('Rendering…');
     const t0 = performance.now();
     if (fresh || !engine) {
       if (engine) engine.destroy();
-      engine = new ASCIIEngine(artEl, Object.assign({ preset, src, fitMode: 'width' }, currentOverrides()));
-      engine.render(src).then(() => { syncControlsFromOpts(engine._opts); showStats(t0); });
+      engine = new ASCIIEngine(artEl, Object.assign({ preset, src, fitMode: 'fixed' }, currentOverrides()));
+      engine.render(src).then(() => { syncControlsFromOpts(engine._opts); fitPreviewArt(); showStats(t0); });
     } else {
-      engine.update(currentOverrides()).then(() => showStats(t0));
+      engine.update(currentOverrides()).then(() => { fitPreviewArt(); showStats(t0); });
     }
   }
   function showStats(t0) {
