@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ascii-engine — docs</title>
+<style>
+  :root { --fg:#1a1a1a; --bg:#fff; --muted:#777; --card:#f6f6f8; --border:#e2e2e6; --accent:#4f8cff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e6e6e6; --bg:#101014; --muted:#9a9a9a; --card:#17171d; --border:#2e2e35; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         color: var(--fg); background: var(--bg); max-width: 860px; margin: 0 auto;
+         padding: 2.5rem 1.25rem 5rem; line-height: 1.6; font-size: 15.5px; }
+  h1 { font-size: 1.7rem; margin: 0; }
+  h1 + p { color: var(--muted); margin-top: .3rem; }
+  h2 { font-size: 1.15rem; margin: 2.4rem 0 .6rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  h3 { font-size: .95rem; margin: 1.4rem 0 .4rem; }
+  code, pre { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .84em; }
+  code { background: var(--card); padding: .12em .35em; border-radius: 4px; }
+  pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+        padding: .9rem 1rem; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .86rem; margin: .6rem 0; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td code { white-space: nowrap; }
+  .pill { display: inline-block; background: var(--card); border: 1px solid var(--border);
+          border-radius: 999px; padding: .05rem .6rem; font-size: .78rem; margin: 0 .25rem .25rem 0; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>ascii-engine</h1>
+<p>Zero-dependency ASCII art engine for interactive, theme-adaptive article graphics. One file, embeds with two lines of HTML.</p>
+
+<h2>Quick start</h2>
+<pre><code>&lt;script src="ascii-engine.min.js" defer&gt;&lt;/script&gt;
+&lt;div data-ascii-src="/img/hero.jpg"
+     data-ascii-preset="theme-adaptive"
+     data-ascii-alt="Portrait of a trader at a terminal"&gt;&lt;/div&gt;</code></pre>
+<p>That's it — the engine auto-initializes every element carrying <code>data-ascii-src</code>. The easiest way to produce a config is the <strong>playground</strong> (<code>playground/index.html</code>): drop an image, pick a preset, tune, copy the snippet.</p>
+
+<h3>Programmatic API</h3>
+<pre><code>const engine = new ASCIIEngine(container, {
+  src: '/img/hero.jpg',
+  preset: 'crt',
+  glow: 70,               // any option overrides the preset
+  alt: 'CRT-styled portrait',
+});
+engine.render();          // or engine.render(imgElement)
+engine.update({ density: 80 });  // cheap — grid is cached
+engine.destroy();</code></pre>
+
+<h2>Presets</h2>
+<p>
+<span class="pill">theme-adaptive (default)</span><span class="pill">classic-mono</span><span class="pill">matrix-rain</span><span class="pill">blueprint</span><span class="pill">crt</span><span class="pill">halftone</span><span class="pill">braille</span><span class="pill">blocks</span><span class="pill">line-art</span><span class="pill">cyberpunk</span><span class="pill">glitch</span><span class="pill">faded</span><span class="pill">ansi-256</span>
+</p>
+<p>A preset is a <em>baseline</em>: anything you set explicitly wins. Canonical definitions: <code>presets/presets.json</code> (identical copy ships inside the engine as <code>ASCIIEngine.PRESETS</code>).</p>
+
+<h2>Options</h2>
+<table>
+<tr><th>Option</th><th>Attribute</th><th>Default</th><th>Notes</th></tr>
+<tr><td><code>src</code></td><td><code>data-ascii-src</code></td><td>—</td><td>Image URL (required)</td></tr>
+<tr><td><code>alt</code></td><td><code>data-ascii-alt</code></td><td>—</td><td><strong>Required</strong> — rendered as a visually-hidden description; console warning if missing</td></tr>
+<tr><td><code>preset</code></td><td><code>data-ascii-preset</code></td><td><code>null</code></td><td>See presets above</td></tr>
+<tr><td><code>density</code></td><td><code>data-ascii-density</code></td><td>62</td><td>0–100% → 40–240 columns (<code>cols</code> overrides directly)</td></tr>
+<tr><td><code>contrast</code></td><td><code>data-ascii-contrast</code></td><td>50</td><td>0–100% → tone curve exponent 0.5–2.5</td></tr>
+<tr><td><code>gamma</code></td><td><code>data-ascii-gamma</code></td><td>1.0</td><td>0.2–3.0</td></tr>
+<tr><td><code>charset</code></td><td><code>data-ascii-charset</code></td><td><code>classic</code></td><td><code>classic</code> · <code>extended</code> · <code>blocks</code> · <code>braille</code> · or a custom ramp string (light→dark)</td></tr>
+<tr><td><code>renderMode</code></td><td><code>data-ascii-render-mode</code></td><td><code>dom</code></td><td><code>dom</code> (interactive, ≤~8k glyphs) · <code>pre</code> (lightest) · <code>canvas</code> (large/animated grids)</td></tr>
+<tr><td><code>fitMode</code></td><td><code>data-ascii-fit-mode</code></td><td><code>width</code></td><td><code>width</code> auto-sizes font to container (ResizeObserver) · <code>fixed</code></td></tr>
+<tr><td><code>colorMode</code></td><td><code>data-ascii-color-mode</code></td><td><code>theme</code></td><td><code>theme</code> = inherits <code>--ascii-fg</code>, flips with your site's light/dark automatically · <code>source</code> = image RGB</td></tr>
+<tr><td><code>themeBlend</code></td><td><code>data-ascii-theme-blend</code></td><td>0</td><td>0–100% mixes source color toward theme color</td></tr>
+<tr><td><code>saturation</code></td><td><code>data-ascii-saturation</code></td><td>100</td><td>0 = mono, 100 = full source color</td></tr>
+<tr><td><code>dither</code></td><td><code>data-ascii-dither</code></td><td>0</td><td>0–1 strength; <code>ditheringMode</code>: <code>fs</code> (Floyd–Steinberg) · <code>bayer</code></td></tr>
+<tr><td><code>edgeBlend</code></td><td><code>data-ascii-edge-blend</code></td><td>0</td><td>0–1 (or %) Sobel line-art blend</td></tr>
+<tr><td><code>glow</code></td><td><code>data-ascii-glow</code></td><td>0</td><td>0–100% phosphor glow (text-shadow, layered ×2 above 60%)</td></tr>
+<tr><td><code>noise</code></td><td><code>data-ascii-noise</code></td><td>0</td><td>0–100% seeded glyph corruption; animate with <code>animSpeed</code></td></tr>
+<tr><td><code>animSpeed</code></td><td><code>data-ascii-anim-speed</code></td><td>0</td><td>0–100% → tick interval ∞–60 ms</td></tr>
+<tr><td><code>seed</code></td><td><code>data-ascii-seed</code></td><td>0</td><td>Reproducible randomness for noise/fade</td></tr>
+<tr><td><code>colorQuant</code></td><td><code>data-ascii-color-quant</code></td><td><code>none</code></td><td><code>ansi256</code> snaps colors to the xterm palette</td></tr>
+<tr><td><code>fg / bg / accent</code></td><td><code>data-ascii-fg</code> …</td><td>—</td><td>Set the <code>--ascii-*</code> CSS variables inline</td></tr>
+</table>
+
+<h3>Hover (dom mode)</h3>
+<table>
+<tr><th>Option</th><th>Attribute</th><th>Default</th><th>Notes</th></tr>
+<tr><td><code>hoverEffect</code></td><td><code>data-ascii-hover</code></td><td><code>null</code></td><td><code>highlight</code> · <code>ripple</code> (press) · <code>invert</code> · <code>pulse</code> · <code>magnify</code> · <code>reveal</code></td></tr>
+<tr><td><code>hoverRadius</code></td><td><code>data-ascii-hover-radius</code></td><td>4</td><td>In cells (aspect-corrected circle)</td></tr>
+<tr><td><code>hoverDuration</code></td><td><code>data-ascii-hover-duration</code></td><td>150</td><td>ms</td></tr>
+<tr><td><code>hoverEasing</code></td><td><code>data-ascii-hover-easing</code></td><td><code>ease-out</code></td><td>Any CSS easing</td></tr>
+<tr><td><code>hoverFalloff</code></td><td><code>data-ascii-hover-falloff</code></td><td><code>smooth</code></td><td><code>smooth</code> · <code>linear</code> · <code>none</code></td></tr>
+<tr><td><code>entrance</code></td><td><code>data-ascii-entrance</code></td><td><code>null</code></td><td><code>typing</code> · <code>fade</code> — plays when scrolled into view</td></tr>
+<tr><td><code>entranceDuration</code></td><td><code>data-ascii-entrance-duration</code></td><td>900</td><td>ms</td></tr>
+</table>
+<p>Touch devices: hover works via touch-drag; coarse-pointer devices get a slow ambient auto-animation instead. Both respect <code>prefers-reduced-motion</code> (animations render their static frame).</p>
+
+<h2>Theming</h2>
+<pre><code>:root {
+  --ascii-fg: currentColor;   /* glyph color (theme mode) */
+  --ascii-bg: transparent;    /* container background      */
+  --ascii-accent: #4f8cff;    /* hover / pulse effects     */
+}</code></pre>
+<p>In <code>theme</code> color mode the art is colored purely by CSS variables, so class-based themes and <code>prefers-color-scheme</code> both flip it automatically. Known limitation: <code>source</code> mode with <code>themeBlend&gt;0</code> bakes colors at render time — re-render on theme switch.</p>
+
+<h2>Performance guide</h2>
+<table>
+<tr><th>Situation</th><th>Recommendation</th></tr>
+<tr><td>Article thumbnail / hero (≤ ~8k glyphs)</td><td><code>dom</code> — full hover interactivity</td></tr>
+<tr><td>High density (&gt;150 cols) or heavy noise animation</td><td><code>canvas</code> — cell redraws instead of DOM writes; hover uses highlight semantics</td></tr>
+<tr><td>No interactivity needed</td><td><code>pre</code> — one text node</td></tr>
+<tr><td>Glow &gt; 60%</td><td>Doubles shadow layers — costs paint time on very large dom grids; fine on canvas</td></tr>
+</table>
+<p>Non-structural updates (contrast, color, dither, glow…) patch glyphs in place and never re-run the sampling pipeline; only <code>src</code>/<code>cols</code>/<code>edgeBlend</code>/aspect changes resample (results are cached per combination).</p>
+
+<h2>Accessibility</h2>
+<p>Always on: the art container is <code>aria-hidden</code>; the required <code>alt</code> renders as a visually-hidden <code>role="img"</code> description; keyboard focus never enters the glyphs; <code>prefers-reduced-motion</code> disables noise, ripple, ambient and entrance animations.</p>
+
+<h2>Files</h2>
+<table>
+<tr><td><code>dist/ascii-engine.min.js</code></td><td>production build (~11 KB gzipped)</td></tr>
+<tr><td><code>src/ascii-engine.js</code></td><td>readable source</td></tr>
+<tr><td><code>playground/index.html</code></td><td>visual configurator → embed snippet / JSON / SVG / PNG</td></tr>
+<tr><td><code>presets/presets.json</code></td><td>canonical preset definitions</td></tr>
+<tr><td><code>test/engine.test.js</code></td><td><code>node test/engine.test.js</code> — 54 checks, no dependencies</td></tr>
+</table>
+
+</body>
+</html>

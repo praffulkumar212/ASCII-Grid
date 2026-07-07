@@ -1,0 +1,15 @@
+{
+  "name": "ascii-engine",
+  "version": "0.5.0",
+  "description": "Zero-dependency ASCII art engine for interactive, theme-adaptive article graphics",
+  "main": "src/ascii-engine.js",
+  "private": true,
+  "scripts": {
+    "test": "node test/engine.test.js",
+    "build": "npx --yes terser src/ascii-engine.js -c -m --comments '/^!/' -o dist/ascii-engine.min.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@gitlab.com:praffulkumar212/ascii-art.git"
+  }
+}

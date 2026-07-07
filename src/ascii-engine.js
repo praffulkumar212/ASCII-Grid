@@ -13,6 +13,11 @@
  *          touch-drag support via pointer events + coarse-pointer ambient
  *          fallback, reduced-motion respected. DOM mode only; style-only —
  *          the cached grid and pipeline are never touched.
+ * Phase 6 (v0.5.0): entrance animations (typing/fade via IntersectionObserver,
+ *          README §11), canvas render mode for large/animated grids (hover =
+ *          highlight semantics via hit-testing), perf: in-place span patching
+ *          on non-structural repaints, O(k) noise sampling, rAF-coalesced
+ *          hover, >10k-glyph dom warning.
  */
 (function () {
   'use strict';
@@ -527,6 +532,14 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._hoverHandlers = null;
       this._rippleTimers  = null;
       this._ambient       = null;
+      this._pendingHover  = null;
+      this._hoverRaf      = null;
+      this._canvasMeta    = null;   // Phase 6 canvas render state
+      this._canvasHoverPrev = null;
+      this._paintGrid     = null;
+      this._io            = null;   // Phase 6 entrance observer
+      this._entranceRaf   = null;
+      this._warnedSize    = false;
     }
 
     // preset baseline ← user overrides → normalized opts
@@ -583,11 +596,13 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     destroy() {
       this._stopEffects();
       this._teardownHover();
+      this._teardownEntrance();
       if (this._worker) { this._worker.terminate(); this._worker = null; }
       if (this._ro)     { this._ro.disconnect();    this._ro = null; }
       this._el.innerHTML = '';
       this._grid = null;
       this._spans = null; this._preEl = null; this._baseText = null;
+      this._canvasMeta = null; this._canvasHoverPrev = null; this._paintGrid = null;
     }
 
     // ── Internal ───────────────────────────────────────────────────────────
@@ -641,6 +656,9 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         hoverDuration: raw.hoverDuration != null ? Math.max(0, Number(raw.hoverDuration)) : 150,
         hoverEasing:   raw.hoverEasing   || 'ease-out',
         hoverFalloff:  ['none', 'linear', 'smooth'].indexOf(raw.hoverFalloff) !== -1 ? raw.hoverFalloff : 'smooth',
+        // Phase 6 — entrance animations (README §11)
+        entrance:      ['typing', 'fade'].indexOf(raw.entrance) !== -1 ? raw.entrance : null,
+        entranceDuration: raw.entranceDuration != null ? Math.max(0, Number(raw.entranceDuration)) : 900,
       };
     }
 
@@ -708,13 +726,104 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     _paint(grid, opts) {
       this._stopEffects();    // repaint invalidates span refs / base text
       this._teardownHover();
+      this._teardownEntrance();
       if (opts.renderMode === 'pre') {
         this._renderPre(grid, opts);
+      } else if (opts.renderMode === 'canvas') {
+        this._renderCanvas(grid, opts);
       } else {
         this._renderDOM(grid, opts);
       }
       this._applyEffectStyles(opts);
       this._setupHover();
+      this._setupEntrance();
+    }
+
+    // ── Canvas render mode (Phase 6) ───────────────────────────────────────
+    // Opt-in for large/animated grids (README §4): one draw call per cell, no
+    // DOM nodes. Hover is supported via coordinate hit-testing (highlight
+    // semantics for all effects except ripple). Glow via ctx.shadowBlur.
+    _renderCanvas(grid, opts) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext && canvas.getContext('2d');
+      if (!ctx) {
+        console.warn('[ascii-engine] canvas 2d context unavailable — falling back to pre mode.');
+        return this._renderPre(grid, opts);
+      }
+      const charset  = resolveCharset(opts.charset);
+      const dithered = opts.dither > 0;
+      const exp      = dithered ? 1.0 : contrastExponent(opts.contrast);
+      const gamma    = dithered ? 1.0 : opts.gamma;
+      const brightness = dithered
+        ? toneAndDither(grid.brightness, grid.rows, grid.cols, charset.length, opts)
+        : grid.brightness;
+
+      const scale = 2; // crisp on hidpi
+      const cw = 8 * scale, ch = Math.round(8 * (opts.glyphAspect || GLYPH_ASPECT)) * scale;
+      canvas.width  = grid.cols * cw;
+      canvas.height = grid.rows * ch;
+      canvas.style.width = '100%';
+      canvas.style.display = 'block';
+
+      const useColor = opts.colorMode === 'source' && grid.colors;
+      const blend    = opts.themeBlend / 100;
+      const satPct   = opts.saturation;
+      let themeRGB   = null;
+      if (useColor && blend > 0) themeRGB = resolveCSSColor(this._el);
+      let fg = '#888';
+      try { fg = getComputedStyle(this._el).color || fg; } catch (_) {}
+
+      const chars  = new Array(grid.rows * grid.cols);
+      const colors = new Array(grid.rows * grid.cols);
+      for (let i = 0; i < chars.length; i++) {
+        chars[i] = mapChar(brightness[i], charset, exp, gamma);
+        if (useColor) {
+          let cr = grid.colors[i*3], cg = grid.colors[i*3+1], cb = grid.colors[i*3+2];
+          if (satPct !== 100) { [cr, cg, cb] = applySaturation(cr, cg, cb, satPct); }
+          if (blend > 0 && themeRGB) { [cr, cg, cb] = blendColors([cr, cg, cb], themeRGB, blend); }
+          if (opts.colorQuant === 'ansi256') { [cr, cg, cb] = quantizeAnsi256(cr, cg, cb); }
+          colors[i] = 'rgb(' + cr + ',' + cg + ',' + cb + ')';
+        } else {
+          colors[i] = fg;
+        }
+      }
+
+      const bg = opts.bg || null;
+      ctx.font = (7 * scale) + 'px monospace';
+      ctx.textBaseline = 'top';
+      if (opts.glow > 0) {
+        ctx.shadowColor = fg;
+        ctx.shadowBlur  = (opts.glow / 100) * 12 * scale;
+      }
+
+      const meta = {
+        canvas, ctx, cw, ch, cols: grid.cols, rows: grid.rows, chars, colors, bg,
+        drawCell(i, chOverride, colorOverride) {
+          const r = (i / this.cols) | 0, c = i % this.cols;
+          this.ctx.clearRect(c * this.cw, r * this.ch, this.cw, this.ch);
+          if (this.bg) {
+            const sb = this.ctx.shadowBlur; this.ctx.shadowBlur = 0;
+            this.ctx.fillStyle = this.bg;
+            this.ctx.fillRect(c * this.cw, r * this.ch, this.cw, this.ch);
+            this.ctx.shadowBlur = sb;
+          }
+          this.ctx.fillStyle = colorOverride || this.colors[i];
+          this.ctx.fillText(chOverride || this.chars[i], c * this.cw + this.cw * 0.1, r * this.ch + (this.ch - 7 * 2) / 2);
+        },
+      };
+      if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      for (let i = 0; i < chars.length; i++) {
+        if (chars[i] === ' ') continue;
+        const r = (i / grid.cols) | 0, c = i % grid.cols;
+        ctx.fillStyle = colors[i];
+        ctx.fillText(chars[i], c * cw + cw * 0.1, r * ch + (ch - 7 * 2) / 2);
+      }
+
+      this._el.innerHTML = '';
+      this._el.appendChild(canvas);
+      this._canvasMeta = meta;
+      this._spans = null; this._preEl = null; this._baseText = null;
+      this._paintGrid = grid;
     }
 
     // Glow (README §9: text-shadow 0 0 pct×12px currentColor, layered ×2 >60%)
@@ -777,6 +886,35 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       let themeRGB    = null;
       if (useColor && blend > 0) themeRGB = resolveCSSColor(this._el);
 
+      const colorOf = (idx) => {
+        if (!useColor) return '';
+        let cr = grid.colors[idx * 3];
+        let cg = grid.colors[idx * 3 + 1];
+        let cb = grid.colors[idx * 3 + 2];
+        if (satPct !== 100) { [cr, cg, cb] = applySaturation(cr, cg, cb, satPct); }
+        if (blend > 0 && themeRGB) { [cr, cg, cb] = blendColors([cr, cg, cb], themeRGB, blend); }
+        if (opts.colorQuant === 'ansi256') { [cr, cg, cb] = quantizeAnsi256(cr, cg, cb); }
+        return 'rgb(' + cr + ',' + cg + ',' + cb + ')';
+      };
+
+      // PERF fast path: same grid dimensions → patch spans in place. Slider
+      // tuning (contrast, dither, color, charset…) never rebuilds 10k+ nodes.
+      if (this._spans && this._spans.length === grid.rows * grid.cols && !this._canvasMeta) {
+        const spans = this._spans;
+        const gridChanged = this._paintGrid !== grid;
+        for (let i = 0; i < spans.length; i++) {
+          const sp = spans[i];
+          const ch = mapChar(brightness[i], charset, exp, gamma);
+          if (sp.textContent !== ch) sp.textContent = ch;
+          const col = colorOf(i);
+          if ((sp.style.color || '') !== col) sp.style.color = col;
+          if (gridChanged) sp.dataset.brightness = grid.brightness[i].toFixed(3);
+        }
+        this._paintGrid = grid;
+        this._preEl = null; this._baseText = null;
+        return;
+      }
+
       this._el.innerHTML = '';
       Object.assign(this._el.style, {
         display: 'block', fontFamily: 'monospace',
@@ -784,6 +922,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
         backgroundColor: 'var(--ascii-bg, transparent)',
         userSelect: 'none',
       });
+
+      if (grid.rows * grid.cols > 10000 && !this._warnedSize) {
+        this._warnedSize = true;
+        console.warn('[ascii-engine] ' + (grid.rows * grid.cols) + ' glyphs in dom mode — '
+          + 'consider renderMode:"canvas" (large grids) or lower density for smooth animation/hover.');
+      }
 
       const frag  = document.createDocumentFragment();
       const spans = [];
@@ -800,15 +944,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
           sp.dataset.brightness = raw.toFixed(3);
           sp.dataset.cell       = r + ',' + c;
 
-          if (useColor) {
-            let cr = grid.colors[idx * 3];
-            let cg = grid.colors[idx * 3 + 1];
-            let cb = grid.colors[idx * 3 + 2];
-            if (satPct !== 100) { [cr, cg, cb] = applySaturation(cr, cg, cb, satPct); }
-            if (blend > 0 && themeRGB) { [cr, cg, cb] = blendColors([cr, cg, cb], themeRGB, blend); }
-            if (opts.colorQuant === 'ansi256') { [cr, cg, cb] = quantizeAnsi256(cr, cg, cb); }
-            sp.style.color = 'rgb(' + cr + ',' + cg + ',' + cb + ')';
-          }
+          const col = colorOf(idx);
+          if (col) sp.style.color = col;
 
           spans.push(sp);
           row.appendChild(sp);
@@ -817,6 +954,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       }
       this._el.appendChild(frag);
       this._spans = spans; this._preEl = null; this._baseText = null;
+      this._paintGrid = grid; this._canvasMeta = null;
     }
 
     _applyA11y(opts) {
@@ -850,6 +988,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _fitWidth(cols) {
+      if (this._canvasMeta) return; // canvas scales via CSS width
       requestAnimationFrame(() => {
         const w = this._el.offsetWidth;
         if (!w || !cols) return;
@@ -882,7 +1021,12 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
     _restoreNoise() {
       if (this._corrupted) {
-        for (const { el, ch } of this._corrupted) el.textContent = ch;
+        // reverse order so duplicate picks restore to the original char
+        for (let i = this._corrupted.length - 1; i >= 0; i--) {
+          const x = this._corrupted[i];
+          if (x.el) x.el.textContent = x.ch;
+          else if (this._canvasMeta) this._canvasMeta.drawCell(x.i, null, null);
+        }
         this._corrupted = null;
       }
       if (this._preEl && this._baseText != null) this._preEl.textContent = this._baseText;
@@ -896,18 +1040,36 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._restoreNoise();
 
       if (this._spans) {
+        // PERF: sample k = N·p random cells (O(k)) instead of an rng roll per
+        // span (O(N)) — at 240 cols that's ~80 ops/tick instead of ~30,000.
+        const spans = this._spans;
+        const N = spans.length;
+        const k = Math.round(N * p);
         const corrupted = [];
-        for (const sp of this._spans) {
-          if (rng() < p) {
-            corrupted.push({ el: sp, ch: sp.textContent });
-            sp.textContent = charset[(rng() * charset.length) | 0];
-          }
+        for (let n = 0; n < k; n++) {
+          const sp = spans[(rng() * N) | 0];
+          corrupted.push({ el: sp, ch: sp.textContent });
+          sp.textContent = charset[(rng() * charset.length) | 0];
+        }
+        this._corrupted = corrupted;
+      } else if (this._canvasMeta) {
+        const m = this._canvasMeta;
+        const N = m.chars.length;
+        const k = Math.round(N * p);
+        const corrupted = [];
+        for (let n = 0; n < k; n++) {
+          const i = (rng() * N) | 0;
+          corrupted.push({ i });
+          m.drawCell(i, charset[(rng() * charset.length) | 0], null);
         }
         this._corrupted = corrupted;
       } else if (this._preEl && this._baseText != null) {
         const chars = this._baseText.split('');
-        for (let i = 0; i < chars.length; i++) {
-          if (chars[i] !== '\n' && rng() < p) chars[i] = charset[(rng() * charset.length) | 0];
+        const N = chars.length;
+        const k = Math.round(N * p);
+        for (let n = 0; n < k; n++) {
+          const i = (rng() * N) | 0;
+          if (chars[i] !== '\n') chars[i] = charset[(rng() * charset.length) | 0];
         }
         this._preEl.textContent = chars.join('');
       }
@@ -922,38 +1084,119 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._ro.observe(this._el.parentElement || this._el);
     }
 
+    // ── Entrance animations (Phase 6, README §11) ──────────────────────────
+    // typing = row-major batched reveal; fade = per-cell staggered opacity.
+    // Triggered by IntersectionObserver; static frame under reduced motion or
+    // when IO is unavailable. DOM mode only (canvas/pre render statically).
+
+    _setupEntrance() {
+      const o = this._opts;
+      if (!o.entrance || !this._spans || prefersReducedMotion()
+        || typeof IntersectionObserver === 'undefined') return;
+      for (const sp of this._spans) sp.style.visibility = 'hidden';
+      this._io = new IntersectionObserver((entries) => {
+        if (!entries.some((en) => en.isIntersecting)) return;
+        this._io.disconnect(); this._io = null;
+        this._runEntrance();
+      }, { threshold: 0.15 });
+      this._io.observe(this._el);
+    }
+
+    _teardownEntrance() {
+      if (this._io) { this._io.disconnect(); this._io = null; }
+      if (this._entranceRaf && typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(this._entranceRaf);
+      }
+      this._entranceRaf = null;
+    }
+
+    _runEntrance() {
+      const o = this._opts, spans = this._spans;
+      if (!spans) return;
+      const N = spans.length;
+      if (o.entrance === 'typing') {
+        const frames = Math.max(1, Math.round(o.entranceDuration / 16));
+        const per = Math.ceil(N / frames);
+        let i = 0;
+        const raf = typeof requestAnimationFrame !== 'undefined'
+          ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+        const step = () => {
+          for (let n = 0; n < per && i < N; n++, i++) spans[i].style.visibility = '';
+          this._entranceRaf = i < N ? raf(step) : null;
+        };
+        step();
+      } else { // fade — seeded stagger so it's reproducible
+        const rng = mulberry32((o.seed || 0) + 1);
+        for (let i = 0; i < N; i++) {
+          const sp = spans[i];
+          sp.style.visibility = '';
+          sp.style.opacity = '0';
+          sp.style.transition = 'opacity 400ms ease '
+            + Math.round(rng() * o.entranceDuration) + 'ms';
+        }
+        const raf = typeof requestAnimationFrame !== 'undefined'
+          ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+        raf(() => { for (const sp of spans) sp.style.opacity = '1'; });
+      }
+    }
+
     // ── Hover system (Phase 5) ─────────────────────────────────────────────
     // Pure CSS/JS on top of day-one data-cell attrs — zero pipeline changes.
     // Pointer events cover mouse AND touch-drag (README §8 touch fallback);
     // coarse-pointer devices additionally get a slow ambient auto-animation,
     // skipped under prefers-reduced-motion.
 
+    // [c, r] from a pointer event — span dataset in dom mode, coordinate math
+    // in canvas mode.
+    _cellFromEvent(e) {
+      const cell = e.target && e.target.dataset && e.target.dataset.cell;
+      if (cell) {
+        const rc = cell.split(',');
+        return [+rc[1], +rc[0]];
+      }
+      const m = this._canvasMeta;
+      if (m && e.target === m.canvas && e.offsetX != null) {
+        const sx = m.canvas.width  / (m.canvas.clientWidth  || m.canvas.width);
+        const sy = m.canvas.height / (m.canvas.clientHeight || m.canvas.height);
+        const c = Math.floor((e.offsetX * sx) / m.cw);
+        const r = Math.floor((e.offsetY * sy) / m.ch);
+        if (c >= 0 && r >= 0 && c < m.cols && r < m.rows) return [c, r];
+      }
+      return null;
+    }
+
     _setupHover() {
       const o = this._opts;
-      if (!o.hoverEffect || o.renderMode === 'pre' || !this._spans) return;
+      if (!o.hoverEffect || o.renderMode === 'pre' || !(this._spans || this._canvasMeta)) return;
       ensureHoverStyles();
       this._hoverSaved = new Map();   // span → snapshot of mutated style props
       this._rippleTimers = [];
 
-      if (o.hoverEffect === 'reveal') {
+      if (o.hoverEffect === 'reveal' && this._spans) {
         for (const sp of this._spans) sp.style.opacity = '0.15';
       }
 
       if (this._el.addEventListener) {
-        const onMove = (e) => {
-          const cell = e.target && e.target.dataset && e.target.dataset.cell;
-          if (!cell) return;
-          const rc = cell.split(',');
-          if (o.hoverEffect === 'ripple') return; // ripple is press-driven
-          this._hoverAt(+rc[1], +rc[0]);
+        // PERF: coalesce pointermove (fires per pixel) to one hover pass per
+        // animation frame.
+        const flush = () => {
+          this._hoverRaf = null;
+          if (this._pendingHover) this._hoverAt(this._pendingHover[0], this._pendingHover[1]);
         };
-        const onLeave = () => this._hoverClear();
+        const raf = typeof requestAnimationFrame !== 'undefined'
+          ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+        const onMove = (e) => {
+          if (o.hoverEffect === 'ripple') return; // ripple is press-driven
+          const cell = this._cellFromEvent(e);
+          if (!cell) return;
+          this._pendingHover = cell;
+          if (this._hoverRaf == null) this._hoverRaf = raf(flush);
+        };
+        const onLeave = () => { this._pendingHover = null; this._hoverClear(); };
         const onDown = (e) => {
           if (o.hoverEffect !== 'ripple') return;
-          const cell = e.target && e.target.dataset && e.target.dataset.cell;
-          if (!cell) return;
-          const rc = cell.split(',');
-          this._rippleAt(+rc[1], +rc[0]);
+          const cell = this._cellFromEvent(e);
+          if (cell) this._rippleAt(cell[0], cell[1]);
         };
         this._el.addEventListener('pointermove', onMove);
         this._el.addEventListener('pointerleave', onLeave);
@@ -965,6 +1208,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
 
     _teardownHover() {
       if (this._ambient) { clearInterval(this._ambient); this._ambient = null; }
+      this._pendingHover = null; this._hoverRaf = null;
       if (this._rippleTimers) { this._rippleTimers.forEach(clearTimeout); this._rippleTimers = null; }
       this._hoverClear();
       if (this._hoverHandlers && this._el.removeEventListener) {
@@ -994,6 +1238,10 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     }
 
     _hoverClear() {
+      if (this._canvasHoverPrev && this._canvasMeta) {
+        for (const i of this._canvasHoverPrev) this._canvasMeta.drawCell(i, null, null);
+        this._canvasHoverPrev = null;
+      }
       if (!this._hoverSaved) return;
       for (const [sp, s] of this._hoverSaved) {
         sp.style.color = s.color; sp.style.opacity = s.opacity;
@@ -1006,7 +1254,30 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
     // Apply the configured effect centred on cell (c0, r0).
     _hoverAt(c0, r0) {
       const o = this._opts, grid = this._grid;
-      if (!grid || !this._spans || !this._hoverSaved) return;
+      if (!grid) return;
+
+      // Canvas mode: highlight semantics via cell redraws.
+      if (this._canvasMeta) {
+        const m = this._canvasMeta;
+        if (this._canvasHoverPrev) for (const i of this._canvasHoverPrev) m.drawCell(i, null, null);
+        const affected = [];
+        const accent = resolveAccent(this._el);
+        const radius = o.hoverRadius, aspect = o.glyphAspect || GLYPH_ASPECT;
+        const rSpan = Math.ceil(radius / aspect) + 1;
+        for (let r = Math.max(0, r0 - rSpan); r <= Math.min(m.rows - 1, r0 + rSpan); r++) {
+          for (let c = Math.max(0, c0 - radius); c <= Math.min(m.cols - 1, c0 + radius); c++) {
+            const dx = c - c0, dy = (r - r0) * aspect;
+            if (falloffWeight(Math.sqrt(dx * dx + dy * dy), radius, o.hoverFalloff) <= 0) continue;
+            const i = r * m.cols + c;
+            m.drawCell(i, null, accent);
+            affected.push(i);
+          }
+        }
+        this._canvasHoverPrev = affected;
+        return;
+      }
+
+      if (!this._spans || !this._hoverSaved) return;
       this._hoverClear();
       const accent = resolveAccent(this._el);
       const radius = o.hoverRadius;
@@ -1144,6 +1415,8 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       'data-ascii-hover-duration':'hoverDuration',
       'data-ascii-hover-easing':  'hoverEasing',
       'data-ascii-hover-falloff': 'hoverFalloff',
+      'data-ascii-entrance':      'entrance',
+      'data-ascii-entrance-duration': 'entranceDuration',
     };
     for (const [attr, key] of Object.entries(attrs)) {
       if (config[key] != null) continue;

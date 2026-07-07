@@ -322,6 +322,59 @@ function check(name, ok, extra) {
   check('P5: hover is style-only — cached grid untouched', grid.brightness.slice(0,400).join(',') === before);
   eH.destroy(); eR.destroy();
 
+  // ── Phase 6 + perf ──────────────────────────────────────────────────────
+
+  // PERF: non-structural repaint patches spans in place (no DOM rebuild)
+  const elP = new Element('div'); new Element('div').appendChild(elP);
+  const eP = new ASCIIEngine(elP, { cols: 40, alt: 'x', fitMode: 'fixed', contrast: 50 });
+  eP._grid = grid; eP._paint(grid, eP._opts);
+  const spanRef = elP.children[5].children[20];
+  const charBefore = spanRef.textContent;
+  eP._opts = Object.assign({}, eP._opts, { contrast: 100 });
+  eP._paint(grid, eP._opts);
+  check('PERF: repaint patches same span objects in place',
+        elP.children[5].children[20] === spanRef);
+  check('PERF: patched spans reflect new contrast', (() => {
+    // with contrast 100 vs 50 at least some mid-tone chars must differ
+    const t = grabText(elP);
+    eP._opts = Object.assign({}, eP._opts, { contrast: 50 });
+    eP._paint(grid, eP._opts);
+    return t !== grabText(elP);
+  })());
+  check('PERF: O(k) noise — corrupted list length == round(N*p)', (() => {
+    eP._opts = Object.assign({}, eP._opts, { noise: 60, seed: 9 });
+    eP._noiseTick();
+    const n = eP._corrupted.length;
+    eP._restoreNoise();
+    return n === Math.round(400 * 0.6 * 0.35);
+  })());
+  eP.destroy();
+
+  // Entrance animations: option normalization + graceful skip without IO
+  check('P6: entrance opts normalize + invalid rejected', (() => {
+    const a = new ASCIIEngine(new Element('div'), { entrance: 'typing', alt: 'x' });
+    const b = new ASCIIEngine(new Element('div'), { entrance: 'spiral', alt: 'x' });
+    return a._opts.entrance === 'typing' && a._opts.entranceDuration === 900 && b._opts.entrance === null;
+  })());
+  check('P6: no IntersectionObserver → static frame (spans stay visible)', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed', entrance: 'fade' });
+    e._grid = grid; e._paint(grid, e._opts);
+    const visible = (el.children[0].children[0].style.visibility || '') === '';
+    e.destroy();
+    return visible;
+  })());
+
+  // Canvas mode: no 2d context in shim → warn + graceful pre fallback
+  check('P6: canvas mode falls back to pre without a 2d context', (() => {
+    const el = new Element('div'); new Element('div').appendChild(el);
+    const e = new ASCIIEngine(el, { cols: 40, alt: 'x', fitMode: 'fixed', renderMode: 'canvas' });
+    e._grid = grid; e._paint(grid, e._opts);
+    const ok = el.children[0] && el.children[0].tagName === 'PRE';
+    e.destroy();
+    return ok;
+  })());
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail > 0 ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(1); });

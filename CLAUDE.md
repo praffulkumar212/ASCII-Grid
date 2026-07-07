@@ -13,19 +13,20 @@ ASCII art generator for interactive article thumbnails/graphics on Prafful's web
 - `examples/` — sample images + demo embeds for manual testing
 
 ## Current status
-Phases 1–5 complete (engine v0.4.0): core pipeline, color/theme/dithering,
-preset system (13 presets, seeded noise, glow, ANSI-256), playground
-(`playground/index.html`), and hover effects (highlight/ripple/invert/pulse/
-magnify/reveal with duration/easing/radius/falloff configs, pointer-event
-touch-drag + coarse-pointer ambient fallback, reduced-motion respected).
-FIXES.md item 7 (theme-toggle repaint for source+themeBlend) still open;
-playground works around it by re-rendering on theme toggle.
-Next: Phase 6 — publish polish (minified CDN build, docs page, entrance
-animations §11, canvas mode) — only if the project "turns out great".
-Tests: `node test/engine.test.js` (48 checks) — keep passing and extend.
-Presets live in both `src/ascii-engine.js` (PRESETS) and `presets/presets.json`;
-they must stay identical (test-enforced). Playground needs manual browser
-testing — hover feel, gallery, exports.
+ALL PHASES (1–6) complete — engine v0.5.0. Core pipeline; color/theme/
+dithering; presets (13, seeded noise, glow, ANSI-256); playground (two-column:
+sticky preview left, controls right); hover effects; entrance animations
+(typing/fade via IntersectionObserver); canvas render mode for large grids;
+perf work (in-place span patching, O(k) noise sampling, rAF-coalesced hover,
+>10k-glyph warning); `dist/ascii-engine.min.js` (~11 KB gz, `npm run build`);
+docs at `docs/index.html`.
+Still open: FIXES.md #7 (theme-toggle repaint for source+themeBlend — playground
+re-renders as workaround); true braille dot-matrix render technique (2×4
+subpixels/glyph); canvas hover is highlight-semantics only.
+Tests: `npm test` = `node test/engine.test.js` (54 checks) — keep passing and
+extend. Presets in `src/ascii-engine.js` (PRESETS) and `presets/presets.json`
+must stay identical (test-enforced). After touching src/, re-run `npm run build`
+so dist/ stays current. Visual/feel changes need manual browser testing.
 
 ## Non-negotiables (from the plan)
 - **Aspect-ratio correction** in sampling (~2:1 glyph height) is a Phase 1 requirement, not polish
