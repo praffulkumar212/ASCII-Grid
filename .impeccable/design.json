@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-07T23:45:00+05:30",
+  "title": "Design System: ascii-engine",
+  "extensions": {
+    "northStar": "Form Follows Function",
+    "register": "product",
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1A1A1A",
+        "usage": "Primary text, borders, modal headers, and filled primary buttons."
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Drafting Paper",
+        "canonical": "#F5F5F0",
+        "usage": "Main app background. Technical drafting surface, not editorial beige."
+      },
+      "digital-blue": {
+        "role": "primary",
+        "displayName": "Digital Blue",
+        "canonical": "#4F8CFF",
+        "usage": "Selection, links, focus, active states, and primary interactive cues."
+      },
+      "active-blue": {
+        "role": "primary",
+        "displayName": "Active Blue",
+        "canonical": "#005CFF",
+        "usage": "High-contrast filled active states."
+      },
+      "bauhaus-yellow": {
+        "role": "secondary",
+        "displayName": "Bauhaus Yellow",
+        "canonical": "#FFCC00",
+        "usage": "Export, active slider thumbs, and ready/action emphasis."
+      },
+      "alert-red": {
+        "role": "danger",
+        "displayName": "Alert Red",
+        "canonical": "#EF3B33",
+        "usage": "Invalid, destructive, and upload CTA emphasis."
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Empty-state calls, modal titles, and major workspace moments."
+      },
+      "label": {
+        "displayName": "Small-Caps Label",
+        "purpose": "Control labels, section headers, nav labels, and compact metadata."
+      },
+      "mono": {
+        "displayName": "Technical Mono",
+        "purpose": "Values, coordinates, seeds, snippets, glyph counts, and status chips."
+      }
+    },
+    "elevation": {
+      "default": {
+        "boxShadow": "none",
+        "usage": "All panels, cards, controls, and toolbars at rest."
+      },
+      "hardOffset": {
+        "boxShadow": "4px 4px 0 #1A1A1A",
+        "usage": "Top-layer dialogs, selected sample cards, and active draggable layers only."
+      }
+    },
+    "motion": {
+      "durationFast": "150ms",
+      "durationPanel": "150ms",
+      "easing": "ease-out",
+      "reducedMotion": "Disable non-essential UI animation under prefers-reduced-motion."
+    },
+    "layout": {
+      "baseUnit": "4px",
+      "radius": "4px",
+      "desktopShell": "Top toolbar, left navigation/layers rail, central preview workspace, right inspector.",
+      "mobileShell": "Preview first, controls collapsed into tabs or stacked panels."
+    },
+    "rules": {
+      "oneAccent": "Blue is for current selection, primary interaction, links, and focus only.",
+      "noGradient": "No gradients, glass, soft glow, or shadow-as-style.",
+      "borderStructure": "Use 1px borders for internal structure and 2px borders for selected or primary surfaces.",
+      "quietFurniture": "Sidebars and inspectors frame the artwork and must not compete with it."
+    },
+    "dos": [
+      "Use a 4px base unit.",
+      "Use strong 1px and 2px borders.",
+      "Keep the preview/workspace dominant.",
+      "Use mono type for technical values.",
+      "Use 150ms ease-out transitions for state changes."
+    ],
+    "donts": [
+      "Do not make this look like generic SaaS dashboard UI.",
+      "Do not use neon terminal overload.",
+      "Do not use beige editorial styling.",
+      "Do not use glassmorphism.",
+      "Do not add decorative card clutter.",
+      "Do not use purple-blue AI gradients.",
+      "Do not round controls into pills."
+    ]
+  }
+}
