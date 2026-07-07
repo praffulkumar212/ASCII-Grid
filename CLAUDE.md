@@ -20,11 +20,11 @@ sticky preview left, controls right); hover effects; entrance animations
 perf work (in-place span patching, O(k) noise sampling, rAF-coalesced hover,
 >10k-glyph warning); `dist/ascii-engine.min.js` (~11 KB gz, `npm run build`);
 docs at `docs/index.html`.
-Still open: **FIXES.md #8 — hover radius must scale to ≥25% of image width
-(relative radius; do this next)**; FIXES.md #7 (theme-toggle repaint for
-source+themeBlend — playground re-renders as workaround); true braille
-dot-matrix render technique (2×4 subpixels/glyph); canvas hover is
-highlight-semantics only.
+Still open: **FIXES.md #9 — video (MP4/WebM) export of animated renders
+(requested; canvas captureStream + MediaRecorder)**; FIXES.md #7 (theme-toggle
+repaint for source+themeBlend — playground re-renders as workaround); true
+braille dot-matrix render technique (2×4 subpixels/glyph); canvas hover is
+highlight-semantics only. FIXES.md #8 (relative hover radius) shipped in v0.5.1.
 Tests: `npm test` = `node test/engine.test.js` (54 checks) — keep passing and
 extend. Presets in `src/ascii-engine.js` (PRESETS) and `presets/presets.json`
 must stay identical (test-enforced). After touching src/, re-run `npm run build`
