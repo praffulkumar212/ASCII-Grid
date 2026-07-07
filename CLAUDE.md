@@ -13,10 +13,13 @@ ASCII art generator for interactive article thumbnails/graphics on Prafful's web
 - `examples/` — sample images + demo embeds for manual testing
 
 ## Current status
-Phases 1–3 complete (engine v0.3.0): core pipeline, color/theme/dithering, and
-the preset system (13 presets, seeded noise, glow, ANSI-256). FIXES.md items
-1–6 fixed; item 7 (theme-toggle repaint for source+themeBlend) still open.
-Next: Phase 4 — Playground (see README §10 and §12). Tests: `node
+Phases 1–4 complete (engine v0.3.0): core pipeline, color/theme/dithering,
+preset system (13 presets, seeded noise, glow, ANSI-256), and the playground
+(`playground/index.html` — drop image → live preset gallery → sliders → export
+embed snippet / config JSON / SVG / PNG / raw text; needs manual browser
+testing). FIXES.md item 7 (theme-toggle repaint for source+themeBlend) still
+open; playground works around it by re-rendering on theme toggle.
+Next: Phase 5 — hover effects + transitions (README §8). Tests: `node
 test/engine.test.js` (35 checks) — keep passing and extend with new work.
 Presets live in both `src/ascii-engine.js` (PRESETS) and `presets/presets.json`;
 they must stay identical (test-enforced).

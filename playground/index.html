@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ascii-engine playground</title>
+<style>
+  :root {
+    --ascii-fg: #1a1a1a;
+    --ascii-bg: transparent;
+    --ascii-accent: #4f8cff;
+    --pg-bg: #fafafa; --pg-fg: #1a1a1a; --pg-muted: #888;
+    --pg-card: #fff; --pg-border: #ddd; --pg-active: #4f8cff;
+  }
+  html.dark {
+    --ascii-fg: #e8e8e8;
+    --pg-bg: #101014; --pg-fg: #e8e8e8; --pg-muted: #999;
+    --pg-card: #17171d; --pg-border: #333; --pg-active: #6ea2ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--pg-bg); color: var(--pg-fg);
+    max-width: 1080px; margin: 0 auto; padding: 1.5rem 1rem 4rem;
+    transition: background .2s;
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  h1 small { color: var(--pg-muted); font-weight: 400; font-size: .8rem; margin-left: .5rem; }
+  h2 { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--pg-muted); margin: 1.75rem 0 .6rem; }
+  h2 .step { display: inline-block; width: 1.35rem; height: 1.35rem; line-height: 1.35rem; text-align: center;
+             background: var(--pg-active); color: #fff; border-radius: 50%; margin-right: .45rem; font-size: .75rem; }
+  button { padding: .35rem .9rem; cursor: pointer; border: 1px solid var(--pg-border);
+           background: var(--pg-card); color: var(--pg-fg); border-radius: 6px; font-size: .82rem; }
+  button:hover { border-color: var(--pg-active); }
+  button.primary { background: var(--pg-active); border-color: var(--pg-active); color: #fff; }
+
+  /* Step 1 — input */
+  #drop {
+    border: 2px dashed var(--pg-border); border-radius: 10px; padding: 2rem 1rem;
+    text-align: center; color: var(--pg-muted); cursor: pointer; transition: border-color .15s;
+  }
+  #drop.over { border-color: var(--pg-active); color: var(--pg-active); }
+  #drop img { max-height: 90px; max-width: 200px; display: block; margin: .6rem auto 0; border-radius: 6px; }
+  .input-row { display: flex; gap: .5rem; margin-top: .6rem; }
+  .input-row input[type=text] { flex: 1; padding: .4rem .6rem; border: 1px solid var(--pg-border);
+    border-radius: 6px; background: var(--pg-card); color: var(--pg-fg); font-size: .82rem; }
+
+  /* Step 2 — gallery */
+  #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .6rem; }
+  .tile { border: 2px solid var(--pg-border); border-radius: 8px; background: var(--pg-card);
+          cursor: pointer; overflow: hidden; padding: 0; text-align: left; }
+  .tile.active { border-color: var(--pg-active); }
+  .tile .mini { height: 92px; overflow: hidden; pointer-events: none; padding: 4px;
+                display: flex; align-items: center; justify-content: center; }
+  .tile .mini > div { width: 100%; }
+  .tile .name { display: block; font-size: .72rem; padding: .3rem .5rem .4rem; color: var(--pg-fg); }
+  .tile .name em { color: var(--pg-muted); font-style: normal; }
+
+  /* Step 3 — tune */
+  .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .4rem 1.4rem; }
+  .controls label { display: block; font-size: .78rem; margin: .3rem 0 .1rem; color: var(--pg-fg); }
+  .controls label span.val { color: var(--pg-muted); }
+  .controls input[type=range] { width: 100%; }
+  .controls select, .controls input[type=text] { width: 100%; padding: .3rem .5rem; font-size: .8rem;
+    border: 1px solid var(--pg-border); border-radius: 6px; background: var(--pg-card); color: var(--pg-fg); }
+
+  /* preview */
+  #preview-wrap { position: relative; border: 1px solid var(--pg-border); border-radius: 10px;
+                  background: var(--pg-card); padding: 1rem; margin-top: .8rem; min-height: 120px; }
+  #status { font-size: .75rem; color: var(--pg-muted); margin-top: .4rem; min-height: 1.1em; }
+
+  /* Step 4 — export */
+  .export-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+  #snippet { width: 100%; font-family: ui-monospace, monospace; font-size: .72rem; padding: .6rem;
+             border: 1px solid var(--pg-border); border-radius: 8px; background: var(--pg-card);
+             color: var(--pg-fg); white-space: pre; overflow-x: auto; margin-top: .6rem; display: none; }
+  .hint { font-size: .74rem; color: var(--pg-muted); margin-top: .35rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ascii-engine playground <small>image → preset → tune → embed</small></h1>
+  <button id="themeToggle" title="Toggle light/dark to test theme adaptation">◐ theme</button>
+</header>
+
+<!-- ── Step 1 ── -->
+<h2><span class="step">1</span>Image</h2>
+<div id="drop">
+  <div id="dropLabel">Drop an image here, or click to pick a file</div>
+  <img id="thumb" alt="" hidden>
+</div>
+<input id="file" type="file" accept="image/*" hidden>
+<div class="input-row">
+  <input id="url" type="text" placeholder="…or paste an image URL and press Enter">
+  <button id="loadUrl">Load URL</button>
+</div>
+
+<!-- ── Step 2 ── -->
+<h2><span class="step">2</span>Style — live previews of <em>your</em> image</h2>
+<div id="gallery"><p class="hint">Pick an image first — each preset renders a live thumbnail of it.</p></div>
+
+<!-- ── Step 3 ── -->
+<h2><span class="step">3</span>Tune</h2>
+<div class="controls">
+  <div><label>Density <span class="val" id="v-density">62%</span></label>
+    <input type="range" id="c-density" min="0" max="100" value="62"></div>
+  <div><label>Contrast <span class="val" id="v-contrast">50%</span></label>
+    <input type="range" id="c-contrast" min="0" max="100" value="50"></div>
+  <div><label>Gamma <span class="val" id="v-gamma">1.0</span></label>
+    <input type="range" id="c-gamma" min="0.2" max="3" step="0.1" value="1"></div>
+  <div><label>Dither <span class="val" id="v-dither">0%</span></label>
+    <input type="range" id="c-dither" min="0" max="100" value="0"></div>
+  <div><label>Edge blend <span class="val" id="v-edgeBlend">0%</span></label>
+    <input type="range" id="c-edgeBlend" min="0" max="100" value="0"></div>
+  <div><label>Saturation <span class="val" id="v-saturation">100%</span></label>
+    <input type="range" id="c-saturation" min="0" max="100" value="100"></div>
+  <div><label>Theme blend <span class="val" id="v-themeBlend">0%</span></label>
+    <input type="range" id="c-themeBlend" min="0" max="100" value="0"></div>
+  <div><label>Glow <span class="val" id="v-glow">0%</span></label>
+    <input type="range" id="c-glow" min="0" max="100" value="0"></div>
+  <div><label>Noise <span class="val" id="v-noise">0%</span></label>
+    <input type="range" id="c-noise" min="0" max="100" value="0"></div>
+  <div><label>Anim speed <span class="val" id="v-animSpeed">0%</span></label>
+    <input type="range" id="c-animSpeed" min="0" max="100" value="0"></div>
+  <div><label>Charset</label>
+    <select id="c-charset">
+      <option value="classic">Classic 10-level</option>
+      <option value="extended">Extended 70-char</option>
+      <option value="blocks">Blocks ░▒▓█</option>
+      <option value="braille">Braille</option>
+    </select></div>
+  <div><label>Color mode</label>
+    <select id="c-colorMode">
+      <option value="theme">Theme (CSS vars)</option>
+      <option value="source">Source (image RGB)</option>
+    </select></div>
+  <div><label>Alt text (required for accessibility)</label>
+    <input type="text" id="c-alt" placeholder="Describe the image…"></div>
+</div>
+
+<div id="preview-wrap"><div id="art"></div></div>
+<div id="status">No image yet.</div>
+
+<!-- ── Step 4 ── -->
+<h2><span class="step">4</span>Export</h2>
+<div class="export-row">
+  <button class="primary" id="ex-snippet">Copy embed snippet</button>
+  <button id="ex-json">Download config JSON</button>
+  <button id="ex-svg">Download SVG</button>
+  <button id="ex-png">Download PNG</button>
+  <button id="ex-text">Copy raw text</button>
+</div>
+<pre id="snippet"></pre>
+<p class="hint" id="ex-hint"></p>
+
+<script src="../src/ascii-engine.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const artEl = $('art');
+
+  const SLIDERS  = ['density','contrast','gamma','dither','edgeBlend','saturation','themeBlend','glow','noise','animSpeed'];
+  const SELECTS  = ['charset','colorMode'];
+  const PCT      = new Set(['density','contrast','dither','edgeBlend','saturation','themeBlend','glow','noise','animSpeed']);
+  // Engine expects 0–1 for these; sliders are 0–100 for consistency.
+  const AS_FRACTION = new Set(['dither','edgeBlend']);
+
+  let engine   = null;
+  let src      = '';        // object URL or remote URL
+  let srcIsUrl = false;     // true when embeddable as-is
+  let preset   = 'theme-adaptive';
+  let overrides = {};       // user tweaks on top of the preset
+  const galleryEngines = [];
+
+  // ── status ───────────────────────────────────────────────────────────────
+  function status(msg) { $('status').textContent = msg; }
+
+  // ── theme toggle ─────────────────────────────────────────────────────────
+  $('themeToggle').addEventListener('click', () => {
+    document.documentElement.classList.toggle('dark');
+    // theme mode re-reads CSS vars automatically; source+blend needs repaint (FIXES.md #7)
+    if (engine) render();
+  });
+
+  // ── Step 1: input ────────────────────────────────────────────────────────
+  const drop = $('drop');
+  drop.addEventListener('click', () => $('file').click());
+  drop.addEventListener('dragover',  (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', ()  => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault(); drop.classList.remove('over');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) setImageFile(f);
+  });
+  $('file').addEventListener('change', (e) => { if (e.target.files[0]) setImageFile(e.target.files[0]); });
+  $('loadUrl').addEventListener('click', loadFromUrl);
+  $('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadFromUrl(); });
+
+  function loadFromUrl() {
+    const u = $('url').value.trim();
+    if (!u) return;
+    src = u; srcIsUrl = true;
+    onImageChosen(u);
+  }
+  function setImageFile(f) {
+    src = URL.createObjectURL(f); srcIsUrl = false;
+    onImageChosen(src);
+  }
+  function onImageChosen(u) {
+    $('thumb').src = u; $('thumb').hidden = false;
+    $('dropLabel').textContent = 'Image loaded — drop another to replace';
+    ASCIIEngine.clearCache();
+    buildGallery();
+    applyPreset(preset);
+  }
+
+  // ── Step 2: preset gallery (live mini-renders of the chosen image) ──────
+  function buildGallery() {
+    const g = $('gallery');
+    galleryEngines.forEach((e) => e.destroy());
+    galleryEngines.length = 0;
+    g.innerHTML = '';
+    Object.keys(ASCIIEngine.PRESETS).forEach((name) => {
+      const tile = document.createElement('button');
+      tile.className = 'tile' + (name === preset ? ' active' : '');
+      tile.dataset.preset = name;
+      const mini = document.createElement('div');
+      mini.className = 'mini';
+      const holder = document.createElement('div');
+      mini.appendChild(holder);
+      const label = document.createElement('span');
+      label.className = 'name';
+      label.innerHTML = name === 'theme-adaptive' ? name + ' <em>(default)</em>' : name;
+      tile.appendChild(mini); tile.appendChild(label);
+      tile.addEventListener('click', () => applyPreset(name));
+      g.appendChild(tile);
+      // Small, static, cheap: cap cols, force pre-mode, no animation.
+      const me = new ASCIIEngine(holder, {
+        preset: name, src, alt: 'preset preview: ' + name,
+        cols: 48, renderMode: 'pre', fitMode: 'width', noise: 0, animSpeed: 0, glow: 0,
+      });
+      galleryEngines.push(me);
+      me.render(src);
+    });
+  }
+
+  // ── Step 3: tune ─────────────────────────────────────────────────────────
+  function sliderToOpt(key, val) {
+    val = Number(val);
+    return AS_FRACTION.has(key) ? val / 100 : val;
+  }
+  function optToSlider(key, val) {
+    return AS_FRACTION.has(key) ? Math.round(val * 100) : val;
+  }
+  function fmt(key, val) { return key === 'gamma' ? Number(val).toFixed(1) : val + (PCT.has(key) ? '%' : ''); }
+
+  function syncControlsFromOpts(o) {
+    SLIDERS.forEach((k) => {
+      let raw = o[k];
+      // normalized opts carry cols, not density — invert the §9 formula for display
+      if (k === 'density') raw = Math.max(0, Math.min(100, Math.round((o.cols - 40) / 2)));
+      const v = optToSlider(k, raw != null ? raw : 0);
+      $('c-' + k).value = v;
+      $('v-' + k).textContent = fmt(k, $('c-' + k).value);
+    });
+    SELECTS.forEach((k) => {
+      const el = $('c-' + k);
+      if ([...el.options].some((op) => op.value === o[k])) el.value = o[k];
+    });
+  }
+
+  function applyPreset(name) {
+    preset = name;
+    overrides = {};
+    document.querySelectorAll('.tile').forEach((t) => t.classList.toggle('active', t.dataset.preset === name));
+    if (!src) return;
+    render(true);
+  }
+
+  const debouncedUpdate = debounce(() => {
+    if (!engine) return;
+    engine.update(currentOverrides()).then(showStats);
+  }, 120);
+
+  SLIDERS.forEach((k) => {
+    $('c-' + k).addEventListener('input', (e) => {
+      $('v-' + k).textContent = fmt(k, e.target.value);
+      overrides[k] = sliderToOpt(k, e.target.value);
+      debouncedUpdate();
+    });
+  });
+  SELECTS.forEach((k) => {
+    $('c-' + k).addEventListener('change', (e) => { overrides[k] = e.target.value; debouncedUpdate(); });
+  });
+  $('c-alt').addEventListener('change', () => { if (engine) engine.update({ alt: altText() }); });
+
+  function altText() { return $('c-alt').value.trim() || 'ASCII art'; }
+  function currentOverrides() { return Object.assign({}, overrides, { alt: altText() }); }
+
+  function debounce(fn, ms) { let t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; }
+
+  // ── render main preview ──────────────────────────────────────────────────
+  function render(fresh) {
+    if (!src) { status('No image yet.'); return; }
+    status('Rendering…');
+    const t0 = performance.now();
+    if (fresh || !engine) {
+      if (engine) engine.destroy();
+      engine = new ASCIIEngine(artEl, Object.assign({ preset, src, fitMode: 'width' }, currentOverrides()));
+      engine.render(src).then(() => { syncControlsFromOpts(engine._opts); showStats(t0); });
+    } else {
+      engine.update(currentOverrides()).then(() => showStats(t0));
+    }
+  }
+  function showStats(t0) {
+    const g = engine && engine._grid;
+    status((typeof t0 === 'number' ? Math.round(performance.now() - t0) + ' ms  ·  ' : '')
+      + (g ? 'grid ' + g.cols + '×' + g.rows + '  ·  ' : '')
+      + 'preset: ' + preset
+      + (Object.keys(overrides).length ? '  ·  tweaked: ' + Object.keys(overrides).join(', ') : ''));
+  }
+
+  // ── Step 4: export ───────────────────────────────────────────────────────
+  function exportConfig() {
+    const cfg = {};
+    Object.entries(overrides).forEach(([k, v]) => { cfg[k] = v; });
+    return cfg;
+  }
+
+  $('ex-snippet').addEventListener('click', () => {
+    const cfg = exportConfig();
+    const srcAttr = srcIsUrl ? src : '/path/to/your-image.jpg';
+    let html = '<script src="ascii-engine.min.js" defer><\/script>\n'
+      + '<div data-ascii-src="' + srcAttr + '"\n'
+      + '     data-ascii-preset="' + preset + '"\n'
+      + (Object.keys(cfg).length ? '     data-ascii-config=\'' + JSON.stringify(cfg) + '\'\n' : '')
+      + '     data-ascii-alt="' + altText().replace(/"/g, '&quot;') + '"></div>';
+    copy(html, 'Embed snippet copied' + (srcIsUrl ? '.' : ' — replace the placeholder src with your hosted image path.'));
+    const pre = $('snippet'); pre.textContent = html; pre.style.display = 'block';
+  });
+
+  $('ex-json').addEventListener('click', () => {
+    const cfg = Object.assign({ preset }, exportConfig(), { alt: altText() });
+    download('ascii-config.json', new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' }));
+  });
+
+  $('ex-text').addEventListener('click', () => {
+    const t = rawText();
+    if (t) copy(t, 'Raw text copied.');
+  });
+
+  function rawText() {
+    if (!engine) return '';
+    const el = artEl.querySelector('pre');
+    if (el) return el.textContent;
+    return [...artEl.children]
+      .filter((n) => n.tagName === 'DIV')
+      .map((row) => [...row.children].map((s) => s.textContent).join(''))
+      .join('\n');
+  }
+
+  function cellColors() {
+    // per-row array of per-cell colors (null when theme-colored)
+    const rows = [...artEl.children].filter((n) => n.tagName === 'DIV');
+    return rows.map((row) => [...row.children].map((s) => s.style.color || null));
+  }
+
+  $('ex-svg').addEventListener('click', () => {
+    if (!engine || !engine._grid) return;
+    const text = rawText().split('\n');
+    const colors = cellColors();
+    const fg = getComputedStyle(artEl).color || '#000';
+    const cw = 6, ch = 10; // font-size 10 monospace ≈ 6px advance
+    const w = engine._grid.cols * cw, h = text.length * ch;
+    let out = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" font-family="monospace" font-size="10">\n';
+    out += '<rect width="100%" height="100%" fill="none"/>\n';
+    text.forEach((line, r) => {
+      const rowColors = colors[r] || [];
+      const uniform = !rowColors.some(Boolean);
+      if (uniform) {
+        out += '<text x="0" y="' + ((r + 1) * ch - 2) + '" xml:space="preserve" fill="' + fg + '">' + esc(line) + '</text>\n';
+      } else {
+        out += '<text y="' + ((r + 1) * ch - 2) + '" xml:space="preserve">';
+        for (let c = 0; c < line.length; c++) {
+          out += '<tspan x="' + (c * cw) + '" fill="' + (rowColors[c] || fg) + '">' + esc(line[c]) + '</tspan>';
+        }
+        out += '</text>\n';
+      }
+    });
+    out += '</svg>';
+    download('ascii-art.svg', new Blob([out], { type: 'image/svg+xml' }));
+  });
+
+  $('ex-png').addEventListener('click', () => {
+    if (!engine || !engine._grid) return;
+    const text = rawText().split('\n');
+    const colors = cellColors();
+    const scale = 2, cw = 8 * scale, ch = 14 * scale;
+    const canvas = document.createElement('canvas');
+    canvas.width = engine._grid.cols * cw; canvas.height = text.length * ch;
+    const ctx = canvas.getContext('2d');
+    const styles = getComputedStyle(artEl);
+    const bgVar = styles.getPropertyValue('--ascii-bg').trim();
+    if (bgVar && bgVar !== 'transparent') { ctx.fillStyle = bgVar; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.font = (12 * scale) + 'px monospace';
+    ctx.textBaseline = 'top';
+    const fg = styles.color || '#000';
+    text.forEach((line, r) => {
+      const rowColors = colors[r] || [];
+      for (let c = 0; c < line.length; c++) {
+        if (line[c] === ' ') continue;
+        ctx.fillStyle = rowColors[c] || fg;
+        ctx.fillText(line[c], c * cw, r * ch);
+      }
+    });
+    canvas.toBlob((b) => download('ascii-art.png', b), 'image/png');
+  });
+
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function copy(t, msg) {
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
+      .then(() => $('ex-hint').textContent = msg)
+      .catch(() => { $('ex-hint').textContent = 'Clipboard blocked — snippet shown below, copy manually.'; });
+  }
+  function download(name, blob) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    $('ex-hint').textContent = 'Downloaded ' + name + '.';
+  }
+}());
+</script>
+</body>
+</html>
