@@ -1150,24 +1150,54 @@
     return rows.map((row) => [...row.children].map((s) => s.style.color || null));
   }
 
+  function exportGeometry(scale) {
+    const g = engine && engine._grid;
+    const glyphAspect = Math.max(0.1, Number(engine && engine._opts && engine._opts.glyphAspect) || 2);
+    const cw = 8 * scale;
+    const ch = cw * glyphAspect;
+    return {
+      cols: g ? g.cols : 0,
+      rows: g ? g.rows : 0,
+      cw,
+      ch,
+      fontSize: cw * 1.25,
+      baselineOffset: ch * 0.8,
+      width: g ? Math.round(g.cols * cw) : 0,
+      height: g ? Math.round(g.rows * ch) : 0,
+    };
+  }
+
+  function downloadCanvasCopy(sourceCanvas) {
+    const out = document.createElement('canvas');
+    out.width = sourceCanvas.width;
+    out.height = sourceCanvas.height;
+    const ctx = out.getContext('2d');
+    ctx.drawImage(sourceCanvas, 0, 0);
+    out.toBlob((b) => download('ascii-art.png', b), 'image/png');
+  }
+
   $('ex-svg').addEventListener('click', () => {
     if (!engine || !engine._grid) return;
     const text = rawText().split('\n');
+    if (!text.length || !text[0]) {
+      $('ex-hint').textContent = 'SVG export requires DOM or Pre render mode.';
+      return;
+    }
     const colors = cellColors();
     const fg = getComputedStyle(artEl).color || '#000';
-    const cw = 6, ch = 10; // font-size 10 monospace ≈ 6px advance
-    const w = engine._grid.cols * cw, h = text.length * ch;
-    let out = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" font-family="monospace" font-size="10">\n';
+    const geo = exportGeometry(1);
+    let out = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + geo.width + ' ' + geo.height + '" font-family="monospace" font-size="' + geo.fontSize + '">\n';
     out += '<rect width="100%" height="100%" fill="none"/>\n';
     text.forEach((line, r) => {
       const rowColors = colors[r] || [];
       const uniform = !rowColors.some(Boolean);
+      const y = (r * geo.ch) + geo.baselineOffset;
       if (uniform) {
-        out += '<text x="0" y="' + ((r + 1) * ch - 2) + '" xml:space="preserve" fill="' + fg + '">' + esc(line) + '</text>\n';
+        out += '<text x="0" y="' + y + '" xml:space="preserve" fill="' + fg + '">' + esc(line) + '</text>\n';
       } else {
-        out += '<text y="' + ((r + 1) * ch - 2) + '" xml:space="preserve">';
+        out += '<text y="' + y + '" xml:space="preserve">';
         for (let c = 0; c < line.length; c++) {
-          out += '<tspan x="' + (c * cw) + '" fill="' + (rowColors[c] || fg) + '">' + esc(line[c]) + '</tspan>';
+          out += '<tspan x="' + (c * geo.cw) + '" fill="' + (rowColors[c] || fg) + '">' + esc(line[c]) + '</tspan>';
         }
         out += '</text>\n';
       }
@@ -1178,24 +1208,32 @@
 
   $('ex-png').addEventListener('click', () => {
     if (!engine || !engine._grid) return;
+    const sourceCanvas = artEl.querySelector('canvas');
+    if (sourceCanvas) {
+      downloadCanvasCopy(sourceCanvas);
+      return;
+    }
     const text = rawText().split('\n');
+    if (!text.length || !text[0]) return;
     const colors = cellColors();
-    const scale = 2, cw = 8 * scale, ch = 14 * scale;
+    const geo = exportGeometry(2);
     const canvas = document.createElement('canvas');
-    canvas.width = engine._grid.cols * cw; canvas.height = text.length * ch;
+    canvas.width = geo.width;
+    canvas.height = geo.height;
     const ctx = canvas.getContext('2d');
     const styles = getComputedStyle(artEl);
     const bgVar = styles.getPropertyValue('--ascii-bg').trim();
     if (bgVar && bgVar !== 'transparent') { ctx.fillStyle = bgVar; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-    ctx.font = (12 * scale) + 'px monospace';
-    ctx.textBaseline = 'top';
+    ctx.font = geo.fontSize + 'px monospace';
+    ctx.textBaseline = 'alphabetic';
     const fg = styles.color || '#000';
     text.forEach((line, r) => {
       const rowColors = colors[r] || [];
+      const y = (r * geo.ch) + geo.baselineOffset;
       for (let c = 0; c < line.length; c++) {
         if (line[c] === ' ') continue;
         ctx.fillStyle = rowColors[c] || fg;
-        ctx.fillText(line[c], c * cw, r * ch);
+        ctx.fillText(line[c], c * geo.cw, y);
       }
     });
     canvas.toBlob((b) => download('ascii-art.png', b), 'image/png');
