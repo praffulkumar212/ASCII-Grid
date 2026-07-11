@@ -168,13 +168,30 @@ function check(name, ok, extra) {
 
   // ── Phase 3 ─────────────────────────────────────────────────────────────
 
-  // Presets: 13, default included, JSON file in sync with engine
+  // Presets: curated roster of 8, classic-mono default, JSON file in sync
   const presetNames = Object.keys(ASCIIEngine.PRESETS);
-  check('P3: 13 presets incl. theme-adaptive', presetNames.length === 13 && presetNames.includes('theme-adaptive'),
-        presetNames.length + ' presets');
+  const CUT_PRESETS = ['theme-adaptive', 'matrix-rain', 'braille', 'ansi-256', 'glitch'];
+  check('P3: curated roster is 8 presets', presetNames.length === 8, presetNames.length + ' presets');
+  check('P3: default preset is classic-mono (and listed first)',
+        ASCIIEngine.DEFAULT_PRESET === 'classic-mono' && presetNames[0] === 'classic-mono',
+        'default=' + ASCIIEngine.DEFAULT_PRESET);
+  check('P3: cut presets are gone (theme-adaptive/matrix-rain/braille/ansi-256/glitch)',
+        CUT_PRESETS.every(p => !presetNames.includes(p)),
+        'still present: ' + (CUT_PRESETS.filter(p => presetNames.includes(p)).join(',') || 'none'));
   const jsonPresets = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'presets', 'presets.json'), 'utf8'));
-  check('P3: presets/presets.json matches ASCIIEngine.PRESETS',
+  check('P3: presets/presets.json matches ASCIIEngine.PRESETS (content + key order)',
         JSON.stringify(jsonPresets) === JSON.stringify(ASCIIEngine.PRESETS));
+
+  // Default resolution: no preset given → classic-mono baseline applies
+  const eDef = new ASCIIEngine(new Element('div'), { alt: 'x' });
+  check('P3: no preset → classic-mono baseline (contrast 60, saturation 0, cols 150)',
+        eDef._opts.contrast === 60 && eDef._opts.saturation === 0 && eDef._opts.cols === 150,
+        'contrast=' + eDef._opts.contrast + ' sat=' + eDef._opts.saturation + ' cols=' + eDef._opts.cols);
+  // halftone + cyberpunk tuning (v0.7.0)
+  check('P3: halftone density 41, cyberpunk noise 12 / animSpeed 45',
+        ASCIIEngine.PRESETS.halftone.density === 41
+        && ASCIIEngine.PRESETS.cyberpunk.noise === 12
+        && ASCIIEngine.PRESETS.cyberpunk.animSpeed === 45);
 
   // Preset resolution: baseline applies, user overrides win
   const eBp = new ASCIIEngine(new Element('div'), { preset: 'blueprint', alt: 'x' });
@@ -233,14 +250,16 @@ function check(name, ok, extra) {
   check('P3: same seed → identical corruption pattern', grabText(elN2) === noisyText);
   eN.destroy(); eN3.destroy();
 
-  // ANSI preset wires quantization into the DOM color path
+  // colorQuant/ansi256 wires quantization into the DOM color path.
+  // (The ansi-256 preset was retired in v0.7.0; the colorQuant knob it used is
+  // retained, so drive it directly here.)
   const elQ = new Element('div'); new Element('div').appendChild(elQ);
-  const eQ = new ASCIIEngine(elQ, { preset: 'ansi-256', cols: 40, alt: 'x', fitMode: 'fixed' });
+  const eQ = new ASCIIEngine(elQ, { colorMode: 'source', colorQuant: 'ansi256', saturation: 100, cols: 40, alt: 'x', fitMode: 'fixed' });
   eQ._grid = grid; eQ._paint(grid, eQ._opts);
   const qColors = elQ.children.flatMap(r => r.children).map(s => s.style.color).filter(Boolean);
   const palette = new Set([0,95,135,175,215,255, ...Array.from({length:24},(_,i)=>8+10*i)]);
   const allOnPalette = qColors.length > 0 && qColors.every(c => c.match(/\d+/g).every(v => palette.has(+v)));
-  check('P3: ansi-256 preset → every span color on xterm palette', allOnPalette, qColors.length + ' colored spans');
+  check('P3: colorQuant ansi256 → every span color on xterm palette', allOnPalette, qColors.length + ' colored spans');
 
   // Glow + fg/bg land on container styles
   const elG = new Element('div'); new Element('div').appendChild(elG);

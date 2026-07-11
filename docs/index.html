@@ -39,7 +39,7 @@
 <h2>Quick start</h2>
 <pre><code>&lt;script src="ascii-engine.min.js" defer&gt;&lt;/script&gt;
 &lt;div data-ascii-src="/img/hero.jpg"
-     data-ascii-preset="theme-adaptive"
+     data-ascii-preset="classic-mono"
      data-ascii-alt="Portrait of a trader at a terminal"&gt;&lt;/div&gt;</code></pre>
 <p>That's it — the engine auto-initializes every element carrying <code>data-ascii-src</code>. The easiest way to produce a config is the <strong>playground</strong> (<code>playground/index.html</code>): drop an image, pick a preset, tune, copy the snippet.</p>
 
@@ -56,7 +56,7 @@ engine.destroy();</code></pre>
 
 <h2>Presets</h2>
 <p>
-<span class="pill">theme-adaptive (default)</span><span class="pill">classic-mono</span><span class="pill">matrix-rain</span><span class="pill">blueprint</span><span class="pill">crt</span><span class="pill">halftone</span><span class="pill">braille</span><span class="pill">blocks</span><span class="pill">line-art</span><span class="pill">cyberpunk</span><span class="pill">glitch</span><span class="pill">faded</span><span class="pill">ansi-256</span>
+<span class="pill">classic-mono (default)</span><span class="pill">blueprint</span><span class="pill">crt</span><span class="pill">halftone</span><span class="pill">blocks</span><span class="pill">line-art</span><span class="pill">cyberpunk</span><span class="pill">faded</span>
 </p>
 <p>A preset is a <em>baseline</em>: anything you set explicitly wins. Canonical definitions: <code>presets/presets.json</code> (identical copy ships inside the engine as <code>ASCIIEngine.PRESETS</code>).</p>
 
@@ -65,7 +65,7 @@ engine.destroy();</code></pre>
 <tr><th>Option</th><th>Attribute</th><th>Default</th><th>Notes</th></tr>
 <tr><td><code>src</code></td><td><code>data-ascii-src</code></td><td>—</td><td>Image URL (required)</td></tr>
 <tr><td><code>alt</code></td><td><code>data-ascii-alt</code></td><td>—</td><td><strong>Required</strong> — rendered as a visually-hidden description; console warning if missing</td></tr>
-<tr><td><code>preset</code></td><td><code>data-ascii-preset</code></td><td><code>null</code></td><td>See presets above</td></tr>
+<tr><td><code>preset</code></td><td><code>data-ascii-preset</code></td><td><code>classic-mono</code></td><td>See presets above; applied as the baseline when none is set</td></tr>
 <tr><td><code>density</code></td><td><code>data-ascii-density</code></td><td>62</td><td>0–100% → 40–240 columns (<code>cols</code> overrides directly)</td></tr>
 <tr><td><code>contrast</code></td><td><code>data-ascii-contrast</code></td><td>50</td><td>0–100% → tone curve exponent 0.5–2.5</td></tr>
 <tr><td><code>gamma</code></td><td><code>data-ascii-gamma</code></td><td>1.0</td><td>0.2–3.0</td></tr>

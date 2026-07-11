@@ -1,10 +1,10 @@
 /*!
- * ascii-engine.js — v0.6.2
+ * ascii-engine.js — v0.7.0
  * Phase 1: image → brightness grid → dom/pre render, fitMode, caching, a11y
  * Phase 2: source color, theme mode, themeBlend, saturation, FS + Bayer dithering
  * v0.2.1: FIXES.md 1-6 — density update, live RO cols, measured glyph aspect,
  *         dot-count-ordered braille, Sobel edge blend, tone-before-dither
- * Phase 3: preset system (13 presets, PLAN.md §9 formulas), seeded noise
+ * Phase 3: preset system (PLAN.md §9 formulas), seeded noise
  *          animation (mulberry32), glow, ANSI-256 color quantization.
  *          Canonical preset data also lives in presets/presets.json — keep in
  *          sync (enforced by test/engine.test.js).
@@ -18,6 +18,11 @@
  *          highlight semantics via hit-testing), perf: in-place span patching
  *          on non-structural repaints, O(k) noise sampling, rAF-coalesced
  *          hover, >10k-glyph dom warning.
+ * v0.7.0: preset roster curated 13→8 (kept substantially-distinct aesthetics
+ *          only). Default preset is now classic-mono. Cut theme-adaptive,
+ *          matrix-rain, braille, ansi-256, glitch. halftone density 58→41;
+ *          cyberpunk livelier (animSpeed 25→45, noise 6→12). colorQuant/ansi256
+ *          machinery retained (orphaned) pending the color-knob review.
  */
 (function () {
   'use strict';
@@ -59,20 +64,18 @@
   // A preset is a *baseline*: options the user passes explicitly always win.
 
   const PRESETS = {
-    'theme-adaptive': { density: 62, contrast: 50, charset: 'classic',  colorMode: 'theme' },
     'classic-mono':   { density: 55, contrast: 60, charset: 'classic',  colorMode: 'theme', saturation: 0 },
-    'matrix-rain':    { density: 70, contrast: 65, charset: 'extended', colorMode: 'theme', fg: '#33ff66', bg: '#020a04', glow: 35, noise: 18, animSpeed: 45, seed: 42 },
     'blueprint':      { density: 65, contrast: 45, charset: ' .:-=+',   colorMode: 'theme', edgeBlend: 0.85, edgeStyle: 'line', fg: '#dce9ff', bg: '#0d2137' },
     'crt':            { density: 60, contrast: 70, charset: 'classic',  colorMode: 'theme', fg: '#33ff33', bg: '#031103', glow: 55, noise: 4, animSpeed: 20, seed: 7 },
-    'halftone':       { density: 58, contrast: 55, charset: ' ·:oO8@',  colorMode: 'theme', dither: 0.9, ditheringMode: 'bayer', saturation: 0 },
-    'braille':        { density: 80, contrast: 55, charset: 'braille',  colorMode: 'theme' },
+    'halftone':       { density: 41, contrast: 55, charset: ' ·:oO8@',  colorMode: 'theme', dither: 0.9, ditheringMode: 'bayer', saturation: 0 },
     'blocks':         { density: 45, contrast: 50, charset: 'blocks',   colorMode: 'source', saturation: 90 },
     'line-art':       { density: 65, contrast: 45, charset: ' .:-=+*',  colorMode: 'theme', edgeBlend: 1.0, edgeStyle: 'line' },
-    'cyberpunk':      { density: 68, contrast: 60, charset: 'extended', colorMode: 'source', saturation: 100, glow: 45, fg: '#ff2fd6', bg: '#0a0118', accent: '#22e6ff', noise: 6, animSpeed: 25, seed: 2077 },
-    'glitch':         { density: 66, contrast: 55, charset: 'extended', colorMode: 'source', dither: 0.3, noise: 60, animSpeed: 70, seed: 1337 },
+    'cyberpunk':      { density: 68, contrast: 60, charset: 'extended', colorMode: 'source', saturation: 100, glow: 45, fg: '#ff2fd6', bg: '#0a0118', accent: '#22e6ff', noise: 12, animSpeed: 45, seed: 2077 },
     'faded':          { density: 55, contrast: 25, gamma: 1.4, charset: 'classic', colorMode: 'source', saturation: 30, themeBlend: 60 },
-    'ansi-256':       { density: 70, contrast: 55, charset: 'classic',  colorMode: 'source', colorQuant: 'ansi256' },
   };
+
+  // Default preset applied when none is specified (v0.7.0).
+  const DEFAULT_PRESET = 'classic-mono';
 
   // ─── Seeded RNG — mulberry32 (PLAN.md §2: reproducible randomness) ─────────
   function mulberry32(seed) {
@@ -698,10 +701,11 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
       this._imgSrc        = '';
     }
 
-    // preset baseline ← user overrides → normalized opts
+    // preset baseline ← user overrides → normalized opts.
+    // No preset specified → classic-mono is the default baseline (v0.7.0).
     _resolveOpts() {
       const user = this._userOpts;
-      let preset = {};
+      let preset = PRESETS[DEFAULT_PRESET];
       if (user.preset != null) {
         preset = PRESETS[user.preset];
         if (!preset) {
@@ -1775,6 +1779,7 @@ function sampleCell(data, imgW, imgH, col, row, cellW, cellH, brightness, colors
   Object.defineProperty(ASCIIEngine, 'cacheSize', { get: () => _gridCache.size, configurable: true });
 
   ASCIIEngine.PRESETS = PRESETS;
+  ASCIIEngine.DEFAULT_PRESET = DEFAULT_PRESET;
   ASCIIEngine.HOVER_EFFECTS = HOVER_EFFECTS.slice();
 
   // Internals exposed for the test harness only — not public API.
