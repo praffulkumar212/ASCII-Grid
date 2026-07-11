@@ -779,7 +779,7 @@
   let engine   = null;
   let src      = '';        // object URL or remote URL
   let srcIsUrl = false;     // true when embeddable as-is
-  let preset   = 'theme-adaptive';
+  let preset   = 'classic-mono';
   let overrides = {};       // user tweaks on top of the preset
   const galleryEngines = [];
 
@@ -931,12 +931,12 @@
       mini.appendChild(holder);
       const label = document.createElement('span');
       label.className = 'name';
-      label.innerHTML = name === 'theme-adaptive' ? name + ' <em>(default)</em>' : name;
+      label.innerHTML = name === 'classic-mono' ? name + ' <em>(default)</em>' : name;
       tile.appendChild(mini); tile.appendChild(label);
       tile.addEventListener('click', () => applyPreset(name));
       g.appendChild(tile);
       if (!src) {
-        holder.textContent = name === 'theme-adaptive' ? 'DEFAULT' : name.slice(0, 10).toUpperCase();
+        holder.textContent = name === 'classic-mono' ? 'DEFAULT' : name.slice(0, 10).toUpperCase();
         return;
       }
       // Small, static, cheap: cap cols, force pre-mode, no animation.
