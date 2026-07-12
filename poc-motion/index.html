@@ -22,6 +22,8 @@
     .frame { position:relative; width:100%; height:100%; min-height:0; border:2px solid var(--line); background:var(--stage); overflow:hidden; touch-action:none; }
     .camera { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); transform-origin:center; will-change:transform; }
     #view { display:block; width:auto; height:auto; max-width:none; max-height:none; touch-action:none; cursor:crosshair; }
+    #maskOverlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; touch-action:none; }
+    #maskOverlay.drawing { pointer-events:auto; cursor:crosshair; }
     #source { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
     .empty { position:absolute; inset:0; display:grid; place-items:center; padding:32px; text-align:center; color:#aaa; pointer-events:none; }
     .has-source .empty { display:none; }
@@ -43,6 +45,8 @@
     .compact { grid-template-columns:1fr 92px; align-items:end; }
     .compact label { margin-bottom:12px; }
     .hidden { display:none; }
+    .check { display:flex; align-items:center; gap:8px; }
+    .check input { width:auto; }
     .primary { background:var(--accent); color:#111; }
     .hint { margin:8px 0 0; color:var(--muted); font-size:11px; }
     .progress { height:4px; margin-top:10px; background:color-mix(in srgb,var(--line) 15%,transparent); }
@@ -75,7 +79,7 @@
       <div class="frame" id="frame">
         <div id="source" aria-hidden="true"></div>
         <div class="viewport-tools" aria-label="Viewport controls"><button id="fitView" type="button">Fit</button><button id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutValue">100%</output><button id="zoomIn" type="button" aria-label="Zoom in">+</button><button id="actualSize" type="button">100%</button></div>
-        <div class="camera" id="camera"><canvas id="view" aria-label="Animated ASCII preview"></canvas></div>
+        <div class="camera" id="camera"><canvas id="view" aria-label="Animated ASCII preview"></canvas><canvas id="maskOverlay" aria-label="Mask editing overlay"></canvas></div>
         <div class="empty">Upload an image to test continuous motion, pointer interaction, and portable exports.</div>
         <div class="stats" id="stats">idle</div>
       </div>
@@ -134,6 +138,24 @@
         <label><span>Strength <b id="strengthOut">70</b></span><input id="strength" type="range" min="0" max="100" value="70"></label>
         </div>
       </details>
+      <details class="accordion">
+        <summary>Mask <span class="accordion-summary" id="maskSummary">None</span></summary>
+        <div class="accordion-body">
+          <label>Shape<select id="maskShape"><option value="none">None</option><option value="square">Square</option><option value="rectangle">Rectangle</option><option value="circle">Circle</option><option value="triangle">Triangle</option><option value="freeform">Freeform lasso</option></select></label>
+          <button id="drawMask" type="button" disabled>Draw freeform mask</button>
+          <div id="maskTransform" class="hidden">
+            <div class="row"><label><span>Center X <b id="maskXOut">50</b></span><input id="maskX" type="range" min="0" max="100" value="50"></label><label><span>Center Y <b id="maskYOut">50</b></span><input id="maskY" type="range" min="0" max="100" value="50"></label></div>
+            <label><span>Width <b id="maskWOut">55</b></span><input id="maskW" type="range" min="5" max="100" value="55"></label>
+            <label><span>Height <b id="maskHOut">55</b></span><input id="maskH" type="range" min="5" max="100" value="55"></label>
+            <label><span>Rotation <b id="maskRotationOut">0°</b></span><input id="maskRotation" type="range" min="-180" max="180" value="0"></label>
+          </div>
+          <label class="check"><input id="maskInvert" type="checkbox"> Invert mask</label>
+          <label>Masked area fill<select id="maskFill"><option value="none">Empty</option><option value="image">Original image</option><option value="color">Solid color</option></select></label>
+          <label id="maskFillColorWrap" class="hidden">Fill color<input id="maskFillColor" type="color" value="#000000"></label>
+          <button id="clearMask" type="button">Clear mask</button>
+          <p class="hint" id="maskHint">Choose a preset shape or draw a freeform region directly on the artwork.</p>
+        </div>
+      </details>
       <section>
         <h2>Feasibility exports</h2>
         <div class="row"><button id="png" type="button" disabled>PNG frame</button><button id="webm" type="button" disabled>4s WebM</button></div>
@@ -148,9 +170,10 @@
   (() => {
     'use strict';
     const $ = (id) => document.getElementById(id);
-    const sourceEl=$('source'), view=$('view'), ctx=view.getContext('2d'), frame=$('frame'), camera=$('camera');
+    const sourceEl=$('source'), view=$('view'), ctx=view.getContext('2d'), frame=$('frame'), camera=$('camera'),maskOverlay=$('maskOverlay'),maskCtx=maskOverlay.getContext('2d');
     const state={engine:null,url:null,ready:false,dirty:true,start:performance.now(),pointer:{active:false,x:0,y:0},raf:0,last:0,lastDraw:0,fps:0,frames:0,fpsAt:performance.now(),recording:false,interactionStep:1,motionStep:1,
-      camera:{scale:1,fitScale:1,panX:0,panY:0,isFit:true,space:false,panning:false,dragX:0,dragY:0,startX:0,startY:0,touches:new Map(),pinch:null}};
+      camera:{scale:1,fitScale:1,panX:0,panY:0,isFit:true,space:false,panning:false,dragX:0,dragY:0,startX:0,startY:0,touches:new Map(),pinch:null},
+      mask:{type:'none',x:.5,y:.5,w:.55,h:.55,rotation:0,basePoints:null,drawing:false,draft:[]}};
     const reduced=matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function setTheme(theme){
@@ -173,6 +196,8 @@
       $('appearanceSummary').textContent=(value('colorMode')==='source'?'Source colors':'Single color')+' · '+value('cols')+' columns';
       $('motionSummary').textContent=value('motion')==='none'?'None':$('motion').selectedOptions[0].textContent;
       $('interactionSummary').textContent=value('interaction')==='none'?'None':$('interaction').selectedOptions[0].textContent;
+      $('maskXOut').textContent=value('maskX');$('maskYOut').textContent=value('maskY');$('maskWOut').textContent=value('maskW');$('maskHOut').textContent=value('maskH');$('maskRotationOut').textContent=value('maskRotation')+'°';
+      $('maskSummary').textContent=state.mask.type==='none'?'None':$('maskShape').selectedOptions[0].textContent+($('maskInvert').checked?' · inverted':'');
     }
     document.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('input',updateLabels)); updateLabels();
 
@@ -192,13 +217,30 @@
         ? 'Uses a stronger repeating threshold grid for a deliberately graphic, halftone-like texture.'
         : 'Smoothly distributes tonal error into neighboring cells, reducing visible patterns.';
     }
+    function maskPoints(){
+      const m=state.mask;if(m.type==='none')return null;let local=[];
+      if(m.type==='circle'){for(let i=0;i<40;i++){const a=i/40*Math.PI*2;local.push([Math.cos(a)/2,Math.sin(a)/2]);}}
+      else if(m.type==='triangle')local=[[-.5,.5],[0,-.5],[.5,.5]];
+      else if(m.type==='freeform')local=m.basePoints||[];
+      else local=[[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]];
+      const a=m.rotation*Math.PI/180,cos=Math.cos(a),sin=Math.sin(a),sizeW=(m.type==='square'||m.type==='circle')?Math.min(m.w,m.h):m.w,sizeH=(m.type==='square'||m.type==='circle')?Math.min(m.w,m.h):m.h;
+      return local.map(([lx,ly])=>{const px=lx*sizeW,py=ly*sizeH;return[Math.max(0,Math.min(1,m.x+px*cos-py*sin)),Math.max(0,Math.min(1,m.y+px*sin+py*cos))];});
+    }
+    function maskFillValue(){return value('maskFill')==='color'?value('maskFillColor'):value('maskFill');}
+    function syncMaskStateFromControls(){const m=state.mask;m.x=number('maskX')/100;m.y=number('maskY')/100;m.w=number('maskW')/100;m.h=number('maskH')/100;m.rotation=number('maskRotation');}
+    function syncMaskControls(){const m=state.mask;$('maskX').value=Math.round(m.x*100);$('maskY').value=Math.round(m.y*100);$('maskW').value=Math.round(m.w*100);$('maskH').value=Math.round(m.h*100);$('maskRotation').value=m.rotation;updateLabels();}
+    function drawMaskOverlay(){
+      if(!maskCtx||!maskOverlay.width)return;maskCtx.clearRect(0,0,maskOverlay.width,maskOverlay.height);const pts=state.mask.drawing?state.mask.draft:maskPoints();if(!pts||pts.length<2)return;
+      maskCtx.save();maskCtx.lineWidth=Math.max(2,2/(state.camera.scale||1));maskCtx.strokeStyle='#ff5c35';maskCtx.fillStyle='rgba(255,92,53,.14)';maskCtx.setLineDash(state.mask.drawing?[8,6]:[]);maskCtx.beginPath();pts.forEach((p,i)=>(i?maskCtx.lineTo(p[0]*maskOverlay.width,p[1]*maskOverlay.height):maskCtx.moveTo(p[0]*maskOverlay.width,p[1]*maskOverlay.height)));if(!state.mask.drawing)maskCtx.closePath();maskCtx.fill();maskCtx.stroke();maskCtx.restore();
+    }
+    function applyMask(){drawMaskOverlay();invalidate();scheduleAppearance();updateLabels();}
     function appearanceOptions(){
       const noise=number('noise');
       return {preset:value('preset'),cols:number('cols'),charset:selectedCharset(),contrast:number('contrast'),gamma:number('gamma'),
         colorMode:value('colorMode'),fg:value('fg'),bg:value('bg'),themeBlend:number('tintStrength'),saturation:number('saturation'),
         dither:(number('dither')/100)*(value('ditheringMode')==='bayer'?1.8:1),
         ditheringMode:value('ditheringMode'),glow:number('glow'),noise,animSpeed:noise?45:0,edgeBlend:number('edgeBlend')/100,
-        edgeStyle:value('edgeStyle'),renderMode:'canvas'};
+        edgeStyle:value('edgeStyle'),mask:maskPoints(),maskInvert:$('maskInvert').checked,maskFill:maskFillValue(),renderMode:'canvas'};
     }
     function syncAppearanceFromPreset(){
       const p=ASCIIEngine.PRESETS[value('preset')]||{};
@@ -218,7 +260,7 @@
     function sourceCanvas(){return sourceEl.querySelector('canvas');}
     function applyCamera(){
       const c=state.camera;camera.style.left='calc(50% + '+c.panX+'px)';camera.style.top='calc(50% + '+c.panY+'px)';
-      camera.style.transform='translate(-50%,-50%) scale('+c.scale+')';$('zoomOutValue').textContent=Math.round(c.scale*100)+'%';
+      camera.style.transform='translate(-50%,-50%) scale('+c.scale+')';$('zoomOutValue').textContent=Math.round(c.scale*100)+'%';if(maskOverlay.width)drawMaskOverlay();
     }
     function fitView(resetPan=true){
       if(!view.width||!view.height)return;const pad=28,c=state.camera;
@@ -234,7 +276,8 @@
     function fitCanvas(){
       const sc=sourceCanvas();if(!sc)return;const changed=view.width!==sc.width||view.height!==sc.height;
       view.width=sc.width;view.height=sc.height;view.style.width=sc.width+'px';view.style.height=sc.height+'px';
-      if(changed||!state.camera.fitScale)fitView(true);else applyCamera();invalidate();
+      maskOverlay.width=sc.width;maskOverlay.height=sc.height;maskOverlay.style.width=sc.width+'px';maskOverlay.style.height=sc.height+'px';
+      if(changed||!state.camera.fitScale)fitView(true);else applyCamera();drawMaskOverlay();invalidate();
     }
 
     $('fitView').addEventListener('click',()=>fitView(true));
@@ -301,6 +344,32 @@
     $('motion').addEventListener('change',()=>{state.start=performance.now();invalidate();updateLabels();});
     $('interaction').addEventListener('change',()=>{invalidate();updateLabels();});
     $('replay').addEventListener('click',()=>{state.start=performance.now();invalidate();});
+    function updateMaskUI(){
+      const m=state.mask,has=m.type!=='none',free=m.type==='freeform';$('maskTransform').classList.toggle('hidden',!has||(free&&!m.basePoints));
+      $('drawMask').disabled=!free;$('drawMask').textContent=m.drawing?'Drawing… release to apply':'Draw freeform mask';
+      $('maskFillColorWrap').classList.toggle('hidden',value('maskFill')!=='color');updateLabels();drawMaskOverlay();
+    }
+    $('maskShape').addEventListener('change',()=>{
+      const m=state.mask;m.type=value('maskShape');m.rotation=0;m.basePoints=null;m.drawing=false;m.draft=[];maskOverlay.classList.remove('drawing');
+      if(m.type==='rectangle'){m.x=.5;m.y=.5;m.w=.68;m.h=.44;}else if(m.type==='triangle'){m.x=.5;m.y=.5;m.w=.65;m.h=.6;}else{m.x=.5;m.y=.5;m.w=.55;m.h=.55;}
+      syncMaskControls();updateMaskUI();applyMask();
+    });
+    ['maskX','maskY','maskW','maskH','maskRotation'].forEach(id=>$(id).addEventListener('input',()=>{
+      if((state.mask.type==='square'||state.mask.type==='circle')&&(id==='maskW'||id==='maskH')){const v=value(id);$('maskW').value=v;$('maskH').value=v;}
+      syncMaskStateFromControls();updateMaskUI();applyMask();
+    }));
+    $('maskInvert').addEventListener('change',applyMask);
+    $('maskFill').addEventListener('change',()=>{updateMaskUI();applyMask();});$('maskFillColor').addEventListener('input',applyMask);
+    $('clearMask').addEventListener('click',()=>{$('maskShape').value='none';state.mask={type:'none',x:.5,y:.5,w:.55,h:.55,rotation:0,basePoints:null,drawing:false,draft:[]};$('maskInvert').checked=false;maskOverlay.classList.remove('drawing');syncMaskControls();updateMaskUI();applyMask();});
+    $('drawMask').addEventListener('click',()=>{if(state.mask.type!=='freeform')return;state.mask.drawing=true;state.mask.draft=[];maskOverlay.classList.add('drawing');$('maskHint').textContent='Drag directly over the artwork. Release to apply the freeform mask.';updateMaskUI();});
+    function overlayPoint(e){const r=maskOverlay.getBoundingClientRect();return[Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];}
+    maskOverlay.addEventListener('pointerdown',(e)=>{if(!state.mask.drawing)return;e.stopPropagation();maskOverlay.setPointerCapture&&maskOverlay.setPointerCapture(e.pointerId);state.mask.draft=[overlayPoint(e)];drawMaskOverlay();});
+    maskOverlay.addEventListener('pointermove',(e)=>{if(!state.mask.drawing||!state.mask.draft.length)return;e.stopPropagation();const p=overlayPoint(e),last=state.mask.draft[state.mask.draft.length-1];if(Math.hypot(p[0]-last[0],p[1]-last[1])>.004){state.mask.draft.push(p);drawMaskOverlay();}});
+    maskOverlay.addEventListener('pointerup',(e)=>{
+      if(!state.mask.drawing)return;e.stopPropagation();const pts=state.mask.draft;if(pts.length>=3){const step=Math.max(1,Math.ceil(pts.length/48)),simple=pts.filter((_,i)=>i%step===0),xs=simple.map(p=>p[0]),ys=simple.map(p=>p[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),w=Math.max(.01,maxX-minX),h=Math.max(.01,maxY-minY),cx=(minX+maxX)/2,cy=(minY+maxY)/2;state.mask.x=cx;state.mask.y=cy;state.mask.w=w;state.mask.h=h;state.mask.rotation=0;state.mask.basePoints=simple.map(p=>[(p[0]-cx)/w,(p[1]-cy)/h]);}
+      state.mask.drawing=false;state.mask.draft=[];maskOverlay.classList.remove('drawing');$('maskHint').textContent='Freeform mask applied. Use the controls to transform, invert, or clear it.';syncMaskControls();updateMaskUI();applyMask();
+    });
+    updateMaskUI();
     syncAppearanceFromPreset();
 
     function pointerPos(e){const r=view.getBoundingClientRect();return{x:(e.clientX-r.left)*view.width/r.width,y:(e.clientY-r.top)*view.height/r.height};}

@@ -130,13 +130,13 @@ existing ASCIIEngine (canvas mode)
 
 ### Phase 8 — lasso and shape masks
 
-- [ ] Restore the existing freeform lasso workflow.
-- [ ] Add square, rectangle, circle, and triangle mask presets.
-- [ ] Convert preset shapes into normalized polygons accepted by the engine.
-- [ ] Add move, resize, rotate, invert, clear, and fill controls.
-- [ ] Convert pointer coordinates through the editor camera before mask edits.
-- [ ] Preserve masks during pan, zoom, appearance changes, and preset changes.
-- [ ] Preserve masks in PNG, WebM, and standalone HTML exports.
+- [x] Restore the existing freeform lasso workflow.
+- [x] Add square, rectangle, circle, and triangle mask presets.
+- [x] Convert preset shapes into normalized polygons accepted by the engine.
+- [x] Add move, resize, rotate, invert, clear, and fill controls.
+- [x] Convert pointer coordinates through the editor camera before mask edits.
+- [x] Preserve masks during pan, zoom, appearance changes, and preset changes.
+- [x] Preserve masks in PNG, WebM, and standalone HTML exports.
 
 ### Phase 9 — same-source layer POC (parked for the next product release)
 
@@ -249,6 +249,13 @@ runs at 29 fps and Wave + Cursor Repel runs at 28 fps using a clearly labelled
 4× adaptive interaction preview. Random Resolve remains the most expensive
 effect and uses a labelled coarse preview at extreme density so the editor stays
 responsive; full-quality static source rendering remains unchanged.
+
+Phase 8 restored freeform drawing and added square, rectangle, circle, and
+triangle presets backed by the engine's normalized polygon mask. Shape
+transforms, inversion, empty/original-image/solid-color fills, and clearing are
+available in the Mask accordion. Automated checks drew a freeform mask after
+zooming and panning, verified every preset changed the artwork, and reopened
+masked PNG and standalone HTML exports without runtime errors.
 
 ## Not in scope
 
