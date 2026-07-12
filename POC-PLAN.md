@@ -82,22 +82,22 @@ existing ASCIIEngine (canvas mode)
 
 ### Phase 6 — appearance controls
 
-- [ ] Reuse the existing engine's appearance options instead of creating a
+- [x] Reuse the existing engine's appearance options instead of creating a
       second visual-processing implementation.
-- [ ] Add Density while keeping the current Columns value available as its
+- [x] Add Density while keeping the current Columns value available as its
       precise/advanced representation.
-- [ ] Add character-set selection and custom character input.
-- [ ] Add contrast and gamma.
-- [ ] Add color mode, foreground color, background color, and saturation.
-- [ ] Add dithering strength and dithering mode.
-- [ ] Add glow and noise.
-- [ ] Add edge strength and edge style.
-- [ ] Group appearance separately from Motion and Interaction.
-- [ ] Re-render only the stable ASCII source when an appearance value changes;
+- [x] Add character-set selection and custom character input.
+- [x] Add contrast and gamma.
+- [x] Add color mode, foreground color, background color, and saturation.
+- [x] Add dithering strength and dithering mode.
+- [x] Add glow and noise.
+- [x] Add edge strength and edge style.
+- [x] Group appearance separately from Motion and Interaction.
+- [x] Re-render only the stable ASCII source when an appearance value changes;
       do not restart or duplicate the presentation render loop.
-- [ ] Preserve motion and interaction settings while appearance changes.
-- [ ] Verify PNG, WebM, and interactive HTML use the selected appearance.
-- [ ] Benchmark expensive combinations such as high density + glow + motion.
+- [x] Preserve motion and interaction settings while appearance changes.
+- [x] Verify PNG, WebM, and interactive HTML use the selected appearance.
+- [x] Benchmark expensive combinations such as high density + glow + motion.
 
 ### Phase 7 — universal website embedding
 
@@ -168,6 +168,12 @@ Desktop and 390px mobile layouts rendered without horizontal overflow. PNG,
 HTML reopened independently at the full 1280×832 source-frame resolution with
 no runtime errors. These are feasibility results, not final cross-browser or
 real-device performance claims.
+
+Phase 6 was validated with Blocks, source color, custom background, contrast,
+gamma, saturation, Bayer dithering, glow, noise, directional edges, Wave, and
+Cursor Repel active together. PNG, WebM, and standalone HTML exports completed
+without runtime errors. A high-cost 160-column / 10,080-cell combination with
+70% glow, 25% noise, Wave, and Cursor Repel held 60 fps in headless Chrome.
 
 ## Not in scope
 

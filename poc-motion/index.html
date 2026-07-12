@@ -28,13 +28,17 @@
     h2 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; }
     label { display:grid; gap:5px; margin:0 0 12px; color:var(--muted); }
     label span { display:flex; justify-content:space-between; gap:12px; }
-    input[type=file],select,input[type=range],button { width:100%; }
-    select,button,input[type=file] { min-height:38px; border:1px solid var(--line); background:var(--panel); color:var(--ink); padding:7px 9px; }
+    input[type=file],input[type=text],input[type=number],select,input[type=range],button { width:100%; }
+    select,button,input[type=file],input[type=text],input[type=number] { min-height:38px; border:1px solid var(--line); background:var(--panel); color:var(--ink); padding:7px 9px; }
     input[type=range] { accent-color:var(--accent); }
+    input[type=color] { width:100%; height:38px; padding:3px; border:1px solid var(--line); background:var(--panel); }
     button { cursor:pointer; font-weight:700; }
     button:hover { background:var(--accent); color:#111; }
     button:disabled { opacity:.45; cursor:not-allowed; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .compact { grid-template-columns:1fr 92px; align-items:end; }
+    .compact label { margin-bottom:12px; }
+    .hidden { display:none; }
     .primary { background:var(--accent); color:#111; }
     .hint { margin:8px 0 0; color:var(--muted); font-size:11px; }
     .progress { height:4px; margin-top:10px; background:color-mix(in srgb,var(--line) 15%,transparent); }
@@ -65,12 +69,31 @@
       <section>
         <h2>Source</h2>
         <label>Image<input id="file" type="file" accept="image/*"></label>
-        <label><span>Columns <b id="colsOut">80</b></span><input id="cols" type="range" min="40" max="160" value="80" step="10"></label>
         <label>Preset<select id="preset">
           <option value="classic-mono">Classic mono</option><option value="crt">CRT</option>
           <option value="matrix-rain">Matrix rain</option><option value="cyberpunk">Cyberpunk</option>
           <option value="halftone">Halftone</option><option value="blocks">Blocks</option>
         </select></label>
+      </section>
+      <section>
+        <h2>Appearance</h2>
+        <div class="row compact">
+          <label><span>Density <b id="densityOut">55%</b></span><input id="density" type="range" min="0" max="100" value="55"></label>
+          <label>Columns<input id="cols" type="number" min="10" max="500" value="150" step="1"></label>
+        </div>
+        <label>Character set<select id="charset"><option value="classic">Classic</option><option value="extended">Extended</option><option value="blocks">Blocks</option><option value="braille">Braille</option><option value="custom">Custom</option></select></label>
+        <label id="customCharsetWrap" class="hidden">Custom characters<input id="customCharset" type="text" value=" .:-=+*#%@" maxlength="256"></label>
+        <label><span>Contrast <b id="contrastOut">60</b></span><input id="contrast" type="range" min="0" max="100" value="60"></label>
+        <label><span>Gamma <b id="gammaOut">1.0</b></span><input id="gamma" type="range" min="0.5" max="2" value="1" step="0.05"></label>
+        <label>Color mode<select id="colorMode"><option value="theme">Single color</option><option value="source">Source colors</option></select></label>
+        <div class="row"><label>Foreground<input id="fg" type="color" value="#f3f1eb"></label><label>Background<input id="bg" type="color" value="#050505"></label></div>
+        <label><span>Saturation <b id="saturationOut">0</b></span><input id="saturation" type="range" min="0" max="100" value="0"></label>
+        <label><span>Dithering <b id="ditherOut">0</b></span><input id="dither" type="range" min="0" max="100" value="0"></label>
+        <label>Dither mode<select id="ditheringMode"><option value="fs">Floyd–Steinberg</option><option value="bayer">Bayer</option></select></label>
+        <label><span>Glow <b id="glowOut">0</b></span><input id="glow" type="range" min="0" max="100" value="0"></label>
+        <label><span>Noise <b id="noiseOut">0</b></span><input id="noise" type="range" min="0" max="100" value="0"></label>
+        <label><span>Edge strength <b id="edgeBlendOut">0</b></span><input id="edgeBlend" type="range" min="0" max="100" value="0"></label>
+        <label>Edge style<select id="edgeStyle"><option value="shade">Shaded</option><option value="line">Directional lines</option></select></label>
       </section>
       <section>
         <h2>Motion</h2>
@@ -106,10 +129,36 @@
     function value(id){return $(id).value;}
     function number(id){return Number(value(id));}
     function updateLabels(){
-      $('colsOut').textContent=value('cols'); $('speedOut').textContent=number('speed').toFixed(1);
-      $('intensityOut').textContent=value('intensity'); $('radiusOut').textContent=value('radius')+'%'; $('strengthOut').textContent=value('strength');
+      $('densityOut').textContent=Math.max(0,Math.min(100,Math.round((number('cols')-40)/2)))+'%';
+      $('contrastOut').textContent=value('contrast'); $('gammaOut').textContent=number('gamma').toFixed(2).replace(/0$/,'');
+      $('saturationOut').textContent=value('saturation'); $('ditherOut').textContent=value('dither');
+      $('glowOut').textContent=value('glow'); $('noiseOut').textContent=value('noise'); $('edgeBlendOut').textContent=value('edgeBlend');
+      $('speedOut').textContent=number('speed').toFixed(1); $('intensityOut').textContent=value('intensity');
+      $('radiusOut').textContent=value('radius')+'%'; $('strengthOut').textContent=value('strength');
     }
     document.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('input',updateLabels)); updateLabels();
+
+    function debounce(fn,ms){let timer;return(...args)=>{clearTimeout(timer);timer=setTimeout(()=>fn(...args),ms);};}
+    function selectedCharset(){return value('charset')==='custom'?(value('customCharset')||' '):value('charset');}
+    function appearanceOptions(){
+      const noise=number('noise');
+      return {preset:value('preset'),cols:number('cols'),charset:selectedCharset(),contrast:number('contrast'),gamma:number('gamma'),
+        colorMode:value('colorMode'),fg:value('fg'),bg:value('bg'),saturation:number('saturation'),dither:number('dither')/100,
+        ditheringMode:value('ditheringMode'),glow:number('glow'),noise,animSpeed:noise?45:0,edgeBlend:number('edgeBlend')/100,
+        edgeStyle:value('edgeStyle'),renderMode:'canvas'};
+    }
+    function syncAppearanceFromPreset(){
+      const p=ASCIIEngine.PRESETS[value('preset')]||{};
+      const density=p.density!=null?p.density:62, charset=p.charset||'classic';
+      $('density').value=density;$('cols').value=Math.round(40+density*2);
+      if(['classic','extended','blocks','braille'].includes(charset)){$('charset').value=charset;$('customCharsetWrap').classList.add('hidden');}
+      else{$('charset').value='custom';$('customCharset').value=charset;$('customCharsetWrap').classList.remove('hidden');}
+      $('contrast').value=p.contrast!=null?p.contrast:50;$('gamma').value=p.gamma!=null?p.gamma:1;
+      $('colorMode').value=p.colorMode||'theme';$('fg').value=p.fg||'#f3f1eb';$('bg').value=p.bg||'#050505';
+      $('saturation').value=p.saturation!=null?p.saturation:100;$('dither').value=Math.round((p.dither||0)*100);
+      $('ditheringMode').value=p.ditheringMode||'fs';$('glow').value=p.glow||0;$('noise').value=p.noise||0;
+      $('edgeBlend').value=Math.round((p.edgeBlend||0)*100);$('edgeStyle').value=p.edgeStyle||'shade';updateLabels();
+    }
 
     function hash(i,seed=1337){let x=(i+seed)|0;x=Math.imul(x^(x>>>16),0x45d9f3b);x=Math.imul(x^(x>>>16),0x45d9f3b);return ((x^(x>>>16))>>>0)/4294967295;}
     function sourceCanvas(){return sourceEl.querySelector('canvas');}
@@ -120,22 +169,36 @@
       $('status').textContent='Rendering source…';
       if(state.engine)state.engine.destroy();
       sourceEl.textContent='';
-      state.engine=new ASCIIEngine(sourceEl,{src:state.url,alt:'Motion POC source',preset:value('preset'),cols:number('cols'),fitMode:'fixed',renderMode:'canvas',hoverEffect:null,entrance:null,noise:0,animSpeed:0});
+      sourceEl.style.color=value('fg');
+      state.engine=new ASCIIEngine(sourceEl,Object.assign({src:state.url,alt:'Motion POC source',fitMode:'fixed',hoverEffect:null,entrance:null},appearanceOptions()));
       await state.engine.render(state.url);
       state.ready=true;frame.classList.add('has-source');fitCanvas();
       ['png','webm','html'].forEach(id=>$(id).disabled=false);
       $('status').textContent='Ready';state.start=performance.now();
     }
 
+    async function updateAppearance(){
+      if(!state.engine||!state.url)return;
+      $('status').textContent='Updating appearance…';sourceEl.style.color=value('fg');
+      await state.engine.update(appearanceOptions());fitCanvas();$('status').textContent='Ready';
+    }
+    const scheduleAppearance=debounce(()=>updateAppearance().catch(err=>{$('status').textContent='Update failed';console.error(err);}),90);
+
     $('file').addEventListener('change',()=>{
       const f=$('file').files&&$('file').files[0];if(!f)return;
       if(state.url)URL.revokeObjectURL(state.url);state.url=URL.createObjectURL(f);
       renderSource().catch(err=>{$('status').textContent='Render failed';console.error(err);});
     });
-    $('preset').addEventListener('change',()=>renderSource());
-    $('cols').addEventListener('change',()=>renderSource());
+    $('preset').addEventListener('change',()=>{syncAppearanceFromPreset();scheduleAppearance();});
+    $('density').addEventListener('input',()=>{$('cols').value=Math.round(40+number('density')*2);updateLabels();scheduleAppearance();});
+    $('cols').addEventListener('input',()=>{$('density').value=Math.max(0,Math.min(100,Math.round((number('cols')-40)/2)));updateLabels();scheduleAppearance();});
+    $('charset').addEventListener('change',()=>{$('customCharsetWrap').classList.toggle('hidden',value('charset')!=='custom');scheduleAppearance();});
+    $('customCharset').addEventListener('input',scheduleAppearance);
+    ['contrast','gamma','fg','bg','saturation','dither','glow','noise','edgeBlend'].forEach(id=>$(id).addEventListener('input',scheduleAppearance));
+    ['colorMode','ditheringMode','edgeStyle'].forEach(id=>$(id).addEventListener('change',scheduleAppearance));
     $('motion').addEventListener('change',()=>{state.start=performance.now();});
     $('replay').addEventListener('click',()=>{state.start=performance.now();});
+    syncAppearanceFromPreset();
 
     function pointerPos(e){const r=view.getBoundingClientRect();return{x:(e.clientX-r.left)*view.width/r.width,y:(e.clientY-r.top)*view.height/r.height};}
     view.addEventListener('pointerenter',e=>{Object.assign(state.pointer,pointerPos(e),{active:true});});
