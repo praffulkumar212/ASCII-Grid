@@ -80,6 +80,62 @@ existing ASCIIEngine (canvas mode)
 - [ ] Decide whether the production compositor remains Canvas 2D or needs GPU
       acceleration for high-density grids.
 
+### Phase 6 — appearance controls
+
+- [ ] Reuse the existing engine's appearance options instead of creating a
+      second visual-processing implementation.
+- [ ] Add Density while keeping the current Columns value available as its
+      precise/advanced representation.
+- [ ] Add character-set selection and custom character input.
+- [ ] Add contrast and gamma.
+- [ ] Add color mode, foreground color, background color, and saturation.
+- [ ] Add dithering strength and dithering mode.
+- [ ] Add glow and noise.
+- [ ] Add edge strength and edge style.
+- [ ] Group appearance separately from Motion and Interaction.
+- [ ] Re-render only the stable ASCII source when an appearance value changes;
+      do not restart or duplicate the presentation render loop.
+- [ ] Preserve motion and interaction settings while appearance changes.
+- [ ] Verify PNG, WebM, and interactive HTML use the selected appearance.
+- [ ] Benchmark expensive combinations such as high density + glow + motion.
+
+### Phase 7 — universal website embedding
+
+The default integration should be a responsive `iframe`, because it isolates
+the renderer from a website's CSS and JavaScript and works across plain HTML,
+CMS builders, and framework applications. A direct JavaScript/component embed
+can remain an advanced production option after this route is proven.
+
+- [ ] Keep the exported interactive artwork self-contained with no dependency
+      on the editor or local engine files.
+- [ ] Add a Copy Embed Code action beside Interactive HTML export.
+- [ ] Generate a minimal responsive `iframe` snippet with an explicit title,
+      aspect ratio, lazy loading, and safe default permissions.
+- [ ] Document the one-file workflow: export the HTML, upload it to the target
+      website, and paste the generated `iframe` snippet.
+- [ ] Make the embedded canvas resize with its container without stretching or
+      losing its source aspect ratio.
+- [ ] Preserve Wave, Random Resolve, CRT Glitch, Cursor Repel, and Circular
+      Reveal inside the embed.
+- [ ] Preserve mouse, pen, and touch behavior inside the embed.
+- [ ] Respect `prefers-reduced-motion` in the exported file.
+- [ ] Pause animation when the iframe is hidden, offscreen, or its page is in a
+      background tab.
+- [ ] Ensure two or more embeds can run on one page without shared state.
+- [ ] Ensure website CSS cannot alter the embedded artwork's typography,
+      canvas size, colors, or interaction coordinates.
+- [ ] Add a versioned configuration payload so older embeds remain readable
+      after new controls are introduced.
+- [ ] Avoid `eval`, remote scripts, trackers, and unnecessary iframe
+      permissions.
+- [ ] Test a normal iframe and a sandboxed iframe.
+- [ ] Test the snippet in plain HTML and representative CMS/framework shells.
+- [ ] Record any `Content-Security-Policy` or `frame-src` requirements.
+- [ ] Define a clear fallback poster/static image for browsers where Canvas or
+      required animation APIs are unavailable.
+- [ ] Measure multi-embed CPU use and establish a recommended maximum number of
+      simultaneously animated artworks per page.
+
 ## Success criteria
 
 - Existing engine and playground tests remain green.
@@ -91,6 +147,10 @@ existing ASCIIEngine (canvas mode)
 - WebM records consistent motion on supported browsers.
 - Exported HTML runs without the editor or engine source file.
 - The POC does not accumulate animation loops or object URLs.
+- Appearance settings survive all three export paths.
+- A copied responsive iframe snippet preserves every selected animation and
+  interaction state without inheriting styles from the host website.
+- Multiple embeds on the same page remain isolated and pause when offscreen.
 
 ## Initial browser results
 
@@ -118,4 +178,5 @@ real-device performance claims.
 - MP4 transcoding
 - Transparent video
 - Production UI integration
-- Changes to the public engine API
+- Direct React/Vue/Web Component packages
+- Changes to the public engine API until the iframe route is validated
