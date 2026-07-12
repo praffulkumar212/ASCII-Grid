@@ -99,7 +99,60 @@ existing ASCIIEngine (canvas mode)
 - [x] Verify PNG, WebM, and interactive HTML use the selected appearance.
 - [x] Benchmark expensive combinations such as high density + glow + motion.
 
-### Phase 7 — universal website embedding
+### Phase 7 — editor viewport and organization
+
+- [x] Add a persisted light/dark editor toggle that does not alter artwork or
+      export colors.
+- [x] Constrain the desktop workspace to the browser viewport.
+- [x] Keep the stage visible while the inspector scrolls independently.
+- [x] Move Appearance, Motion, and Interaction into accordions.
+- [x] Keep Appearance closed, Motion open, and Interaction closed by default.
+- [x] Summarize active settings in accordion headers.
+- [x] Add Fit, 100%, zoom in, zoom out, and live zoom percentage controls.
+- [x] Add pointer-centered wheel zoom.
+- [x] Add Space/middle-button panning and two-pointer touch pinch navigation.
+- [x] Keep artwork interaction coordinates correct after camera transforms.
+- [x] Ensure the editor camera never changes PNG, WebM, or HTML export size.
+
+### Phase 7.1 — high-density performance stabilization
+
+- [x] Stop the animation loop from repainting static artwork continuously.
+- [x] Copy the stable source canvas in one operation for static frames.
+- [x] Render Wave as vertical strips instead of one draw call per cell.
+- [x] Render CRT Glitch as horizontal strips instead of one draw call per cell.
+- [x] Restrict pointer distance calculations to the affected grid region.
+- [x] Keep full per-cell interaction precision through 18,000 cells.
+- [x] Group interaction cells into adaptive preview blocks above 18,000 cells.
+- [x] Group the inherently per-cell Random Resolve preview at extreme density.
+- [x] Throttle extreme-density continuous previews where necessary.
+- [x] Show performance-watch, high-density, extreme-density, and preview-quality
+      status directly on the stage.
+
+### Phase 8 — lasso and shape masks
+
+- [ ] Restore the existing freeform lasso workflow.
+- [ ] Add square, rectangle, circle, and triangle mask presets.
+- [ ] Convert preset shapes into normalized polygons accepted by the engine.
+- [ ] Add move, resize, rotate, invert, clear, and fill controls.
+- [ ] Convert pointer coordinates through the editor camera before mask edits.
+- [ ] Preserve masks during pan, zoom, appearance changes, and preset changes.
+- [ ] Preserve masks in PNG, WebM, and standalone HTML exports.
+
+### Phase 9 — same-source layer POC (parked for the next product release)
+
+- [ ] Introduce one serializable editor document with a selected layer.
+- [ ] Add, duplicate, rename, reorder, show/hide, and delete layers.
+- [ ] Give each layer independent appearance, motion, interaction, opacity, and
+      mask settings.
+- [ ] Reuse cached sampling grids when layers share the same source and
+      structural settings.
+- [ ] Render layer frames offscreen and composite them through one shared
+      animation loop into the visible stage canvas.
+- [ ] Add a total render-budget indicator and pause hidden layers.
+- [ ] Preserve the composite in PNG, WebM, and standalone HTML exports.
+- [ ] Keep different source images per layer outside this POC.
+
+### Phase 10 — universal website embedding
 
 The default integration should be a responsive `iframe`, because it isolates
 the renderer from a website's CSS and JavaScript and works across plain HTML,
@@ -183,12 +236,27 @@ threshold scale so the organic and graphic textures remain visibly distinct at
 the same slider value. Conditional-control and same-settings output comparisons
 completed without runtime errors.
 
+Phase 7 keeps the 848px-tall desktop inspector independently scrollable at a
+1,650px content height while the stage remains fully contained in the viewport.
+Theme changes left the artwork canvas byte-identical. Fit, 100%, zoom, pan, and
+reset behavior passed automated browser checks, and PNG, WebM, and standalone
+HTML export dimensions remained independent of the editor camera.
+
+Phase 7.1 removed the critical 26,520-cell static repaint loop: the same case
+that previously ran at 1 fps now renders once and stays idle. At 15,800 cells,
+Wave + Cursor Repel holds 60 fps at full cell precision. At 26,520 cells, Wave
+runs at 29 fps and Wave + Cursor Repel runs at 28 fps using a clearly labelled
+4× adaptive interaction preview. Random Resolve remains the most expensive
+effect and uses a labelled coarse preview at extreme density so the editor stays
+responsive; full-quality static source rendering remains unchanged.
+
 ## Not in scope
 
 - Remixing or gallery/community behavior
 - Timeline or keyframes
 - AI assistance
 - Multi-source textures
+- Different source images per layer
 - MP4 transcoding
 - Transparent video
 - Production UI integration
