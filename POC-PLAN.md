@@ -175,6 +175,14 @@ Cursor Repel active together. PNG, WebM, and standalone HTML exports completed
 without runtime errors. A high-cost 160-column / 10,080-cell combination with
 70% glow, 25% noise, Wave, and Cursor Repel held 60 fps in headless Chrome.
 
+Color-mode polish hides and disables Foreground when Source colors is active,
+shows source-only Saturation and Tint/Mix controls, keeps Background available
+in both modes, and explains the active behavior inline. The dither modes are
+presented by intent (Smooth Diffusion vs Ordered Grid), with a stronger ordered
+threshold scale so the organic and graphic textures remain visibly distinct at
+the same slider value. Conditional-control and same-settings output comparisons
+completed without runtime errors.
+
 ## Not in scope
 
 - Remixing or gallery/community behavior

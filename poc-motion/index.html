@@ -36,6 +36,7 @@
     button:hover { background:var(--accent); color:#111; }
     button:disabled { opacity:.45; cursor:not-allowed; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .row.single-visible > label:not(.hidden) { grid-column:1 / -1; }
     .compact { grid-template-columns:1fr 92px; align-items:end; }
     .compact label { margin-bottom:12px; }
     .hidden { display:none; }
@@ -86,10 +87,15 @@
         <label><span>Contrast <b id="contrastOut">60</b></span><input id="contrast" type="range" min="0" max="100" value="60"></label>
         <label><span>Gamma <b id="gammaOut">1.0</b></span><input id="gamma" type="range" min="0.5" max="2" value="1" step="0.05"></label>
         <label>Color mode<select id="colorMode"><option value="theme">Single color</option><option value="source">Source colors</option></select></label>
-        <div class="row"><label>Foreground<input id="fg" type="color" value="#f3f1eb"></label><label>Background<input id="bg" type="color" value="#050505"></label></div>
-        <label><span>Saturation <b id="saturationOut">0</b></span><input id="saturation" type="range" min="0" max="100" value="0"></label>
+        <p class="hint" id="colorModeHint">Every ASCII character uses the selected foreground color.</p>
+        <div class="row" id="colorRow"><label id="foregroundWrap">Foreground<input id="fg" type="color" value="#f3f1eb"></label><label>Background<input id="bg" type="color" value="#050505"></label></div>
+        <div id="sourceColorControls" class="hidden">
+          <label><span>Saturation <b id="saturationOut">0</b></span><input id="saturation" type="range" min="0" max="100" value="0"></label>
+          <div class="row compact"><label>Tint<input id="tint" type="color" value="#ff5c35"></label><label><span>Mix <b id="tintStrengthOut">0</b></span><input id="tintStrength" type="range" min="0" max="100" value="0"></label></div>
+        </div>
         <label><span>Dithering <b id="ditherOut">0</b></span><input id="dither" type="range" min="0" max="100" value="0"></label>
-        <label>Dither mode<select id="ditheringMode"><option value="fs">Floyd–Steinberg</option><option value="bayer">Bayer</option></select></label>
+        <label>Dither mode<select id="ditheringMode"><option value="fs">Smooth diffusion — organic</option><option value="bayer">Ordered grid — graphic</option></select></label>
+        <p class="hint" id="ditherHint">Smoothly distributes tonal error into neighboring cells, reducing visible patterns.</p>
         <label><span>Glow <b id="glowOut">0</b></span><input id="glow" type="range" min="0" max="100" value="0"></label>
         <label><span>Noise <b id="noiseOut">0</b></span><input id="noise" type="range" min="0" max="100" value="0"></label>
         <label><span>Edge strength <b id="edgeBlendOut">0</b></span><input id="edgeBlend" type="range" min="0" max="100" value="0"></label>
@@ -132,6 +138,7 @@
       $('densityOut').textContent=Math.max(0,Math.min(100,Math.round((number('cols')-40)/2)))+'%';
       $('contrastOut').textContent=value('contrast'); $('gammaOut').textContent=number('gamma').toFixed(2).replace(/0$/,'');
       $('saturationOut').textContent=value('saturation'); $('ditherOut').textContent=value('dither');
+      $('tintStrengthOut').textContent=value('tintStrength');
       $('glowOut').textContent=value('glow'); $('noiseOut').textContent=value('noise'); $('edgeBlendOut').textContent=value('edgeBlend');
       $('speedOut').textContent=number('speed').toFixed(1); $('intensityOut').textContent=value('intensity');
       $('radiusOut').textContent=value('radius')+'%'; $('strengthOut').textContent=value('strength');
@@ -140,10 +147,25 @@
 
     function debounce(fn,ms){let timer;return(...args)=>{clearTimeout(timer);timer=setTimeout(()=>fn(...args),ms);};}
     function selectedCharset(){return value('charset')==='custom'?(value('customCharset')||' '):value('charset');}
+    function updateColorModeUI(){
+      const source=value('colorMode')==='source';
+      $('foregroundWrap').classList.toggle('hidden',source);$('sourceColorControls').classList.toggle('hidden',!source);
+      $('colorRow').classList.toggle('single-visible',source);
+      $('fg').disabled=source;$('saturation').disabled=!source;$('tint').disabled=!source;$('tintStrength').disabled=!source;
+      $('colorModeHint').textContent=source
+        ? 'Character colors are sampled from the source image. Saturation and Tint modify those sampled colors.'
+        : 'Every ASCII character uses the selected foreground color.';
+    }
+    function updateDitherUI(){
+      $('ditherHint').textContent=value('ditheringMode')==='bayer'
+        ? 'Uses a stronger repeating threshold grid for a deliberately graphic, halftone-like texture.'
+        : 'Smoothly distributes tonal error into neighboring cells, reducing visible patterns.';
+    }
     function appearanceOptions(){
       const noise=number('noise');
       return {preset:value('preset'),cols:number('cols'),charset:selectedCharset(),contrast:number('contrast'),gamma:number('gamma'),
-        colorMode:value('colorMode'),fg:value('fg'),bg:value('bg'),saturation:number('saturation'),dither:number('dither')/100,
+        colorMode:value('colorMode'),fg:value('fg'),bg:value('bg'),themeBlend:number('tintStrength'),saturation:number('saturation'),
+        dither:(number('dither')/100)*(value('ditheringMode')==='bayer'?1.8:1),
         ditheringMode:value('ditheringMode'),glow:number('glow'),noise,animSpeed:noise?45:0,edgeBlend:number('edgeBlend')/100,
         edgeStyle:value('edgeStyle'),renderMode:'canvas'};
     }
@@ -155,9 +177,10 @@
       else{$('charset').value='custom';$('customCharset').value=charset;$('customCharsetWrap').classList.remove('hidden');}
       $('contrast').value=p.contrast!=null?p.contrast:50;$('gamma').value=p.gamma!=null?p.gamma:1;
       $('colorMode').value=p.colorMode||'theme';$('fg').value=p.fg||'#f3f1eb';$('bg').value=p.bg||'#050505';
+      $('tint').value=p.fg||'#ff5c35';$('tintStrength').value=p.themeBlend||0;
       $('saturation').value=p.saturation!=null?p.saturation:100;$('dither').value=Math.round((p.dither||0)*100);
       $('ditheringMode').value=p.ditheringMode||'fs';$('glow').value=p.glow||0;$('noise').value=p.noise||0;
-      $('edgeBlend').value=Math.round((p.edgeBlend||0)*100);$('edgeStyle').value=p.edgeStyle||'shade';updateLabels();
+      $('edgeBlend').value=Math.round((p.edgeBlend||0)*100);$('edgeStyle').value=p.edgeStyle||'shade';updateLabels();updateColorModeUI();updateDitherUI();
     }
 
     function hash(i,seed=1337){let x=(i+seed)|0;x=Math.imul(x^(x>>>16),0x45d9f3b);x=Math.imul(x^(x>>>16),0x45d9f3b);return ((x^(x>>>16))>>>0)/4294967295;}
@@ -169,7 +192,7 @@
       $('status').textContent='Rendering source…';
       if(state.engine)state.engine.destroy();
       sourceEl.textContent='';
-      sourceEl.style.color=value('fg');
+      sourceEl.style.color=value('colorMode')==='source'?value('tint'):value('fg');
       state.engine=new ASCIIEngine(sourceEl,Object.assign({src:state.url,alt:'Motion POC source',fitMode:'fixed',hoverEffect:null,entrance:null},appearanceOptions()));
       await state.engine.render(state.url);
       state.ready=true;frame.classList.add('has-source');fitCanvas();
@@ -179,7 +202,7 @@
 
     async function updateAppearance(){
       if(!state.engine||!state.url)return;
-      $('status').textContent='Updating appearance…';sourceEl.style.color=value('fg');
+      $('status').textContent='Updating appearance…';sourceEl.style.color=value('colorMode')==='source'?value('tint'):value('fg');
       await state.engine.update(appearanceOptions());fitCanvas();$('status').textContent='Ready';
     }
     const scheduleAppearance=debounce(()=>updateAppearance().catch(err=>{$('status').textContent='Update failed';console.error(err);}),90);
@@ -194,8 +217,10 @@
     $('cols').addEventListener('input',()=>{$('density').value=Math.max(0,Math.min(100,Math.round((number('cols')-40)/2)));updateLabels();scheduleAppearance();});
     $('charset').addEventListener('change',()=>{$('customCharsetWrap').classList.toggle('hidden',value('charset')!=='custom');scheduleAppearance();});
     $('customCharset').addEventListener('input',scheduleAppearance);
-    ['contrast','gamma','fg','bg','saturation','dither','glow','noise','edgeBlend'].forEach(id=>$(id).addEventListener('input',scheduleAppearance));
-    ['colorMode','ditheringMode','edgeStyle'].forEach(id=>$(id).addEventListener('change',scheduleAppearance));
+    ['contrast','gamma','fg','bg','saturation','tint','tintStrength','dither','glow','noise','edgeBlend'].forEach(id=>$(id).addEventListener('input',scheduleAppearance));
+    $('colorMode').addEventListener('change',()=>{updateColorModeUI();scheduleAppearance();});
+    $('ditheringMode').addEventListener('change',()=>{updateDitherUI();scheduleAppearance();});
+    $('edgeStyle').addEventListener('change',scheduleAppearance);
     $('motion').addEventListener('change',()=>{state.start=performance.now();});
     $('replay').addEventListener('click',()=>{state.start=performance.now();});
     syncAppearanceFromPreset();
