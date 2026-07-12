@@ -101,7 +101,13 @@ Fix direction:
 - Update: playground radius slider (switch to % of width), docs table,
   `data-ascii-hover-radius` parsing ('25%' string), tests.
 
-## 9. ENHANCEMENT — video (MP4) export of animated renders  [PARKED 2026-07-07 — do not pick up until unparked]
+## 9. ENHANCEMENT — video (MP4) export of animated renders  [POC AUTHORIZED 2026-07-12; production remains parked]
+
+Prafful explicitly authorized an isolated feasibility POC on
+`poc/animation-interaction-exports`. The POC may test native WebM recording
+and interactive HTML export, but must not change the production engine or
+playground export flow. Production integration and MP4 transcoding remain
+parked until the POC is reviewed.
 
 PNG/SVG exports capture a static frame; animated presets (glitch, matrix-rain,
 CRT noise, entrance reveals, ripple) lose their point. Add a "Record video"

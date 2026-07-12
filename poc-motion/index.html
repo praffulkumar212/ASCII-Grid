@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ASCII Motion POC</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme: light dark; --bg:#f2f0ea; --panel:#fff; --ink:#111; --muted:#696969; --line:#111; --accent:#ff5c35; }
+    @media (prefers-color-scheme:dark) { :root { --bg:#151515; --panel:#1e1e1e; --ink:#f3f1eb; --muted:#aaa; --line:#eee; --accent:#ff7655; } }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font:14px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    button,input,select { font:inherit; }
+    .top { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:2px solid var(--line); background:var(--panel); }
+    .top strong { font-size:16px; }
+    .badge { padding:3px 7px; background:var(--accent); color:#111; border:1px solid #111; font-size:11px; font-weight:700; }
+    .top .spacer { flex:1; }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; min-height:calc(100vh - 52px); }
+    .stage { display:grid; place-items:center; min-width:0; padding:24px; overflow:hidden; }
+    .frame { position:relative; display:grid; place-items:center; width:min(100%,1000px); height:min(75vh,760px); min-height:420px; border:2px solid var(--line); background:#050505; overflow:hidden; }
+    #view { display:block; max-width:100%; max-height:100%; width:auto; height:auto; touch-action:none; cursor:crosshair; }
+    #source { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
+    .empty { position:absolute; inset:0; display:grid; place-items:center; padding:32px; text-align:center; color:#aaa; pointer-events:none; }
+    .has-source .empty { display:none; }
+    .stats { position:absolute; left:10px; bottom:10px; padding:5px 7px; color:#fff; background:#000b; font-size:11px; pointer-events:none; }
+    .side { border-left:2px solid var(--line); background:var(--panel); overflow:auto; }
+    section { padding:16px; border-bottom:1px solid color-mix(in srgb,var(--line) 25%,transparent); }
+    h2 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; }
+    label { display:grid; gap:5px; margin:0 0 12px; color:var(--muted); }
+    label span { display:flex; justify-content:space-between; gap:12px; }
+    input[type=file],select,input[type=range],button { width:100%; }
+    select,button,input[type=file] { min-height:38px; border:1px solid var(--line); background:var(--panel); color:var(--ink); padding:7px 9px; }
+    input[type=range] { accent-color:var(--accent); }
+    button { cursor:pointer; font-weight:700; }
+    button:hover { background:var(--accent); color:#111; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .primary { background:var(--accent); color:#111; }
+    .hint { margin:8px 0 0; color:var(--muted); font-size:11px; }
+    .progress { height:4px; margin-top:10px; background:color-mix(in srgb,var(--line) 15%,transparent); }
+    .progress i { display:block; width:0; height:100%; background:var(--accent); }
+    @media (max-width:800px) {
+      .layout { grid-template-columns:1fr; }
+      .side { border-left:0; border-top:2px solid var(--line); }
+      .stage { padding:12px; }
+      .frame { min-height:340px; height:58vh; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <strong>ASCII Motion</strong><span class="badge">ISOLATED POC</span>
+    <span class="spacer"></span><span id="status">Choose an image</span>
+  </header>
+  <main class="layout">
+    <div class="stage">
+      <div class="frame" id="frame">
+        <div id="source" aria-hidden="true"></div>
+        <canvas id="view" aria-label="Animated ASCII preview"></canvas>
+        <div class="empty">Upload an image to test continuous motion, pointer interaction, and portable exports.</div>
+        <div class="stats" id="stats">idle</div>
+      </div>
+    </div>
+    <aside class="side">
+      <section>
+        <h2>Source</h2>
+        <label>Image<input id="file" type="file" accept="image/*"></label>
+        <label><span>Columns <b id="colsOut">80</b></span><input id="cols" type="range" min="40" max="160" value="80" step="10"></label>
+        <label>Preset<select id="preset">
+          <option value="classic-mono">Classic mono</option><option value="crt">CRT</option>
+          <option value="matrix-rain">Matrix rain</option><option value="cyberpunk">Cyberpunk</option>
+          <option value="halftone">Halftone</option><option value="blocks">Blocks</option>
+        </select></label>
+      </section>
+      <section>
+        <h2>Motion</h2>
+        <label>Preset<select id="motion"><option value="none">None</option><option value="wave">Wave</option><option value="resolve">Random resolve</option><option value="glitch">CRT glitch</option></select></label>
+        <label><span>Speed <b id="speedOut">1.0</b></span><input id="speed" type="range" min="0.2" max="3" value="1" step="0.1"></label>
+        <label><span>Intensity <b id="intensityOut">45</b></span><input id="intensity" type="range" min="0" max="100" value="45"></label>
+        <button id="replay" type="button">Replay motion</button>
+      </section>
+      <section>
+        <h2>Interaction</h2>
+        <label>Preset<select id="interaction"><option value="none">None</option><option value="repel">Cursor repel</option><option value="reveal">Circular reveal</option></select></label>
+        <label><span>Radius <b id="radiusOut">22%</b></span><input id="radius" type="range" min="5" max="50" value="22"></label>
+        <label><span>Strength <b id="strengthOut">70</b></span><input id="strength" type="range" min="0" max="100" value="70"></label>
+      </section>
+      <section>
+        <h2>Feasibility exports</h2>
+        <div class="row"><button id="png" type="button" disabled>PNG frame</button><button id="webm" type="button" disabled>4s WebM</button></div>
+        <button class="primary" id="html" type="button" disabled>Interactive HTML</button>
+        <div class="progress"><i id="progress"></i></div>
+        <p class="hint" id="exportHint">WebM depends on browser MediaRecorder support. Interactive HTML preserves pointer behavior.</p>
+      </section>
+    </aside>
+  </main>
+  <script src="../src/ascii-engine.js"></script>
+  <script>
+  (() => {
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const sourceEl=$('source'), view=$('view'), ctx=view.getContext('2d'), frame=$('frame');
+    const state={engine:null,url:null,ready:false,start:performance.now(),pointer:{active:false,x:0,y:0},raf:0,last:0,fps:0,frames:0,fpsAt:performance.now(),recording:false};
+    const reduced=matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function value(id){return $(id).value;}
+    function number(id){return Number(value(id));}
+    function updateLabels(){
+      $('colsOut').textContent=value('cols'); $('speedOut').textContent=number('speed').toFixed(1);
+      $('intensityOut').textContent=value('intensity'); $('radiusOut').textContent=value('radius')+'%'; $('strengthOut').textContent=value('strength');
+    }
+    document.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('input',updateLabels)); updateLabels();
+
+    function hash(i,seed=1337){let x=(i+seed)|0;x=Math.imul(x^(x>>>16),0x45d9f3b);x=Math.imul(x^(x>>>16),0x45d9f3b);return ((x^(x>>>16))>>>0)/4294967295;}
+    function sourceCanvas(){return sourceEl.querySelector('canvas');}
+    function fitCanvas(){const sc=sourceCanvas();if(!sc)return;view.width=sc.width;view.height=sc.height;draw(performance.now());}
+
+    async function renderSource(){
+      if(!state.url)return;
+      $('status').textContent='Rendering source…';
+      if(state.engine)state.engine.destroy();
+      sourceEl.textContent='';
+      state.engine=new ASCIIEngine(sourceEl,{src:state.url,alt:'Motion POC source',preset:value('preset'),cols:number('cols'),fitMode:'fixed',renderMode:'canvas',hoverEffect:null,entrance:null,noise:0,animSpeed:0});
+      await state.engine.render(state.url);
+      state.ready=true;frame.classList.add('has-source');fitCanvas();
+      ['png','webm','html'].forEach(id=>$(id).disabled=false);
+      $('status').textContent='Ready';state.start=performance.now();
+    }
+
+    $('file').addEventListener('change',()=>{
+      const f=$('file').files&&$('file').files[0];if(!f)return;
+      if(state.url)URL.revokeObjectURL(state.url);state.url=URL.createObjectURL(f);
+      renderSource().catch(err=>{$('status').textContent='Render failed';console.error(err);});
+    });
+    $('preset').addEventListener('change',()=>renderSource());
+    $('cols').addEventListener('change',()=>renderSource());
+    $('motion').addEventListener('change',()=>{state.start=performance.now();});
+    $('replay').addEventListener('click',()=>{state.start=performance.now();});
+
+    function pointerPos(e){const r=view.getBoundingClientRect();return{x:(e.clientX-r.left)*view.width/r.width,y:(e.clientY-r.top)*view.height/r.height};}
+    view.addEventListener('pointerenter',e=>{Object.assign(state.pointer,pointerPos(e),{active:true});});
+    view.addEventListener('pointermove',e=>{Object.assign(state.pointer,pointerPos(e),{active:true});});
+    view.addEventListener('pointerleave',()=>{state.pointer.active=false;});
+    view.addEventListener('pointerdown',e=>{view.setPointerCapture&&view.setPointerCapture(e.pointerId);Object.assign(state.pointer,pointerPos(e),{active:true});});
+    view.addEventListener('pointerup',()=>{state.pointer.active=false;});
+
+    function draw(now){
+      const sc=sourceCanvas(),g=state.engine&&state.engine._grid;if(!sc||!g)return;
+      const elapsed=(now-state.start)/1000, motion=reduced?'none':value('motion'), interaction=value('interaction');
+      const speed=number('speed'), amount=number('intensity')/100, strength=number('strength')/100;
+      const cw=sc.width/g.cols,ch=sc.height/g.rows,radius=sc.width*number('radius')/100,p=state.pointer;
+      ctx.clearRect(0,0,view.width,view.height);
+      if(interaction==='reveal'&&p.active){ctx.globalAlpha=.18;ctx.drawImage(sc,0,0);ctx.globalAlpha=1;}
+      for(let r=0;r<g.rows;r++)for(let c=0;c<g.cols;c++){
+        const i=r*g.cols+c,sx=c*cw,sy=r*ch,cx=sx+cw/2,cy=sy+ch/2;let dx=0,dy=0,alpha=1;
+        if(motion==='wave')dy=Math.sin(c*.34+elapsed*4*speed)*ch*1.8*amount;
+        else if(motion==='resolve'){
+          const cycle=(elapsed*speed*.32)%1.25,threshold=Math.min(1,cycle);
+          if(hash(i)>threshold){alpha=.08;dx=(hash(i,81)-.5)*cw*5*amount;dy=(hash(i,19)-.5)*ch*3*amount;}
+        } else if(motion==='glitch'){
+          const gate=hash(Math.floor(elapsed*10*speed)+r,77);
+          if(gate<amount*.28)dx=(hash(r+Math.floor(elapsed*20),12)-.5)*cw*14*amount;
+          if(hash(i+Math.floor(elapsed*7),44)<amount*.025)alpha=.1;
+        }
+        if(p.active&&interaction!=='none'){
+          const vx=cx-p.x,vy=cy-p.y,d=Math.hypot(vx,vy);
+          if(d<radius){const t=(1-d/radius);if(interaction==='repel'){const force=t*t*strength*radius*.32;dx+=(vx/(d||1))*force;dy+=(vy/(d||1))*force;}else if(interaction==='reveal'){alpha=Math.max(alpha,.2+.8*t);}}
+          else if(interaction==='reveal')continue;
+        }
+        ctx.globalAlpha=alpha;ctx.drawImage(sc,sx,sy,cw+.5,ch+.5,sx+dx,sy+dy,cw+.5,ch+.5);
+      }
+      ctx.globalAlpha=1;
+    }
+
+    function loop(now){
+      state.raf=requestAnimationFrame(loop);if(document.hidden||!state.ready)return;
+      draw(now);state.frames++;
+      if(now-state.fpsAt>500){state.fps=Math.round(state.frames*1000/(now-state.fpsAt));state.frames=0;state.fpsAt=now;
+        const g=state.engine&&state.engine._grid;if(g)$('stats').textContent=g.cols+'×'+g.rows+' · '+(g.cols*g.rows).toLocaleString()+' cells · '+state.fps+' fps';}
+    }
+    state.raf=requestAnimationFrame(loop);
+
+    function download(name,blob){const a=document.createElement('a');const u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);}
+    $('png').addEventListener('click',()=>view.toBlob(b=>download('ascii-motion-frame.png',b),'image/png'));
+
+    function mimeType(){const choices=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];return choices.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t))||'';}
+    $('webm').addEventListener('click',()=>{
+      const type=mimeType();if(!type||!view.captureStream){$('exportHint').textContent='This browser cannot record WebM from canvas.';return;}
+      const stream=view.captureStream(30),chunks=[],rec=new MediaRecorder(stream,{mimeType:type});state.recording=true;$('webm').disabled=true;state.start=performance.now();
+      rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+      rec.onstop=()=>{stream.getTracks().forEach(t=>t.stop());download('ascii-motion.webm',new Blob(chunks,{type}));state.recording=false;$('webm').disabled=false;$('progress').style.width='0';$('exportHint').textContent='WebM downloaded.';};
+      rec.start(250);const started=performance.now();const timer=setInterval(()=>{const t=Math.min(1,(performance.now()-started)/4000);$('progress').style.width=(t*100)+'%';if(t>=1){clearInterval(timer);rec.stop();}},80);
+    });
+
+    function standaloneHtml(){
+      const png=sourceCanvas().toDataURL('image/png'),g=state.engine._grid;
+      const cfg={cols:g.cols,rows:g.rows,motion:value('motion'),interaction:value('interaction'),speed:number('speed'),intensity:number('intensity'),radius:number('radius'),strength:number('strength')};
+      return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Interactive ASCII</title><style>html,body{margin:0;height:100%;background:#050505;overflow:hidden}canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none}</style><canvas id="v"></canvas><script>const cfg=${JSON.stringify(cfg)},img=new Image(),v=document.getElementById('v'),x=v.getContext('2d'),p={active:false,x:0,y:0};img.onload=()=>{v.width=img.width;v.height=img.height;requestAnimationFrame(loop)};img.src=${JSON.stringify(png)};const h=(i,s=1337)=>{let a=(i+s)|0;a=Math.imul(a^(a>>>16),0x45d9f3b);a=Math.imul(a^(a>>>16),0x45d9f3b);return((a^(a>>>16))>>>0)/4294967295};function pos(e){const r=v.getBoundingClientRect();return{x:(e.clientX-r.left)*v.width/r.width,y:(e.clientY-r.top)*v.height/r.height}}v.onpointermove=e=>Object.assign(p,pos(e),{active:true});v.onpointerleave=()=>p.active=false;v.onpointerdown=e=>Object.assign(p,pos(e),{active:true});let start=performance.now();function loop(now){requestAnimationFrame(loop);const t=(now-start)/1000,cw=img.width/cfg.cols,ch=img.height/cfg.rows,rad=img.width*cfg.radius/100;x.clearRect(0,0,v.width,v.height);if(cfg.interaction==='reveal'&&p.active){x.globalAlpha=.18;x.drawImage(img,0,0);x.globalAlpha=1}for(let r=0;r<cfg.rows;r++)for(let c=0;c<cfg.cols;c++){const i=r*cfg.cols+c,sx=c*cw,sy=r*ch,cx=sx+cw/2,cy=sy+ch/2;let dx=0,dy=0,a=1,q=cfg.intensity/100;if(cfg.motion==='wave')dy=Math.sin(c*.34+t*4*cfg.speed)*ch*1.8*q;else if(cfg.motion==='resolve'){const z=Math.min(1,(t*cfg.speed*.32)%1.25);if(h(i)>z){a=.08;dx=(h(i,81)-.5)*cw*5*q;dy=(h(i,19)-.5)*ch*3*q}}else if(cfg.motion==='glitch'){if(h(Math.floor(t*10*cfg.speed)+r,77)<q*.28)dx=(h(r+Math.floor(t*20),12)-.5)*cw*14*q;if(h(i+Math.floor(t*7),44)<q*.025)a=.1}if(p.active&&cfg.interaction!=='none'){const vx=cx-p.x,vy=cy-p.y,d=Math.hypot(vx,vy);if(d<rad){const z=1-d/rad;if(cfg.interaction==='repel'){const f=z*z*(cfg.strength/100)*rad*.32;dx+=vx/(d||1)*f;dy+=vy/(d||1)*f}else a=Math.max(a,.2+.8*z)}else if(cfg.interaction==='reveal')continue}x.globalAlpha=a;x.drawImage(img,sx,sy,cw+.5,ch+.5,sx+dx,sy+dy,cw+.5,ch+.5)}x.globalAlpha=1}<\/script>`;
+    }
+    $('html').addEventListener('click',()=>download('interactive-ascii.html',new Blob([standaloneHtml()],{type:'text/html'})));
+
+    addEventListener('beforeunload',()=>{cancelAnimationFrame(state.raf);if(state.engine)state.engine.destroy();if(state.url)URL.revokeObjectURL(state.url);});
+  })();
+  </script>
+</body>
+</html>
