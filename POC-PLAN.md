@@ -159,27 +159,27 @@ the renderer from a website's CSS and JavaScript and works across plain HTML,
 CMS builders, and framework applications. A direct JavaScript/component embed
 can remain an advanced production option after this route is proven.
 
-- [ ] Keep the exported interactive artwork self-contained with no dependency
+- [x] Keep the exported interactive artwork self-contained with no dependency
       on the editor or local engine files.
-- [ ] Add a Copy Embed Code action beside Interactive HTML export.
-- [ ] Generate a minimal responsive `iframe` snippet with an explicit title,
+- [x] Add a Copy Embed Code action beside Interactive HTML export.
+- [x] Generate a minimal responsive `iframe` snippet with an explicit title,
       aspect ratio, lazy loading, and safe default permissions.
 - [ ] Document the one-file workflow: export the HTML, upload it to the target
       website, and paste the generated `iframe` snippet.
-- [ ] Make the embedded canvas resize with its container without stretching or
+- [x] Make the embedded canvas resize with its container without stretching or
       losing its source aspect ratio.
-- [ ] Preserve Wave, Random Resolve, CRT Glitch, Cursor Repel, and Circular
+- [x] Preserve Wave, Random Resolve, CRT Glitch, Cursor Repel, and Circular
       Reveal inside the embed.
-- [ ] Preserve mouse, pen, and touch behavior inside the embed.
-- [ ] Respect `prefers-reduced-motion` in the exported file.
-- [ ] Pause animation when the iframe is hidden, offscreen, or its page is in a
+- [x] Preserve mouse, pen, and touch behavior inside the embed.
+- [x] Respect `prefers-reduced-motion` in the exported file.
+- [x] Pause animation when the iframe is hidden, offscreen, or its page is in a
       background tab.
-- [ ] Ensure two or more embeds can run on one page without shared state.
-- [ ] Ensure website CSS cannot alter the embedded artwork's typography,
+- [x] Ensure two or more embeds can run on one page without shared state.
+- [x] Ensure website CSS cannot alter the embedded artwork's typography,
       canvas size, colors, or interaction coordinates.
-- [ ] Add a versioned configuration payload so older embeds remain readable
+- [x] Add a versioned configuration payload so older embeds remain readable
       after new controls are introduced.
-- [ ] Avoid `eval`, remote scripts, trackers, and unnecessary iframe
+- [x] Avoid `eval`, remote scripts, trackers, and unnecessary iframe
       permissions.
 - [ ] Test a normal iframe and a sandboxed iframe.
 - [ ] Test the snippet in plain HTML and representative CMS/framework shells.

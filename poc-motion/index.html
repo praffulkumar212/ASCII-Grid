@@ -159,9 +159,9 @@
       <section>
         <h2>Feasibility exports</h2>
         <div class="row"><button id="png" type="button" disabled>PNG frame</button><button id="webm" type="button" disabled>4s WebM</button></div>
-        <button class="primary" id="html" type="button" disabled>Interactive HTML</button>
+        <div class="row"><button id="html" type="button" disabled>Download HTML</button><button class="primary" id="embed" type="button" disabled>Copy embed code</button></div>
         <div class="progress"><i id="progress"></i></div>
-        <p class="hint" id="exportHint">WebM depends on browser MediaRecorder support. Interactive HTML preserves pointer behavior.</p>
+        <p class="hint" id="exportHint" aria-live="polite">Download the self-contained HTML, or copy a responsive embed for an HTML block.</p>
       </section>
     </aside>
   </main>
@@ -316,7 +316,7 @@
       state.engine=new ASCIIEngine(sourceEl,Object.assign({src:state.url,alt:'Motion POC source',fitMode:'fixed',hoverEffect:null,entrance:null},appearanceOptions()));
       await state.engine.render(state.url);
       state.ready=true;frame.classList.add('has-source');fitCanvas();
-      ['png','webm','html'].forEach(id=>$(id).disabled=false);
+      ['png','webm','html','embed'].forEach(id=>$(id).disabled=false);
       $('status').textContent='Ready';state.start=performance.now();
     }
 
@@ -448,7 +448,11 @@
     }
     state.raf=requestAnimationFrame(loop);
 
-    function download(name,blob){const a=document.createElement('a');const u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);}
+    function download(name,blob){
+      if(!blob)throw new Error('Export returned an empty file');
+      const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();
+      setTimeout(()=>a.remove(),1000);setTimeout(()=>URL.revokeObjectURL(u),60000);
+    }
     $('png').addEventListener('click',()=>view.toBlob(b=>download('ascii-motion-frame.png',b),'image/png'));
 
     function mimeType(){const choices=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];return choices.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t))||'';}
@@ -462,10 +466,30 @@
 
     function standaloneHtml(){
       const png=sourceCanvas().toDataURL('image/png'),g=state.engine._grid;
+      const cfg={version:1,cols:g.cols,rows:g.rows,width:sourceCanvas().width,height:sourceCanvas().height,motion:value('motion'),interaction:value('interaction'),speed:number('speed'),intensity:number('intensity'),radius:number('radius'),strength:number('strength')};
+      return interactiveDocument(cfg,png);
+    }
+
+    function interactiveDocument(cfg,png){
+      return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Interactive ASCII artwork</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050505}canvas{display:block;width:100%;height:100%;touch-action:none}p{margin:0;padding:16px;color:#f3f1eb;font:14px/1.4 system-ui,sans-serif}</style></head><body><canvas id="v" role="img" aria-label="Interactive ASCII artwork">Interactive ASCII artwork</canvas><noscript><p>Enable JavaScript to view this interactive artwork.</p></noscript><script>const cfg=${JSON.stringify(cfg)},img=new Image(),v=document.getElementById('v'),x=v.getContext&&v.getContext('2d'),p={active:false,x:0,y:0},reduce=matchMedia('(prefers-reduced-motion: reduce)'),run={visible:true,raf:0,start:performance.now()};function active(){return run.visible&&!document.hidden}function wake(){if(active()&&!run.raf)run.raf=requestAnimationFrame(loop)}function fit(){const d=Math.max(1,Math.min(2,devicePixelRatio||1)),r=v.getBoundingClientRect();v.width=Math.max(1,Math.round(r.width*d));v.height=Math.max(1,Math.round(r.height*d))}function pos(e){const r=v.getBoundingClientRect();return{x:(e.clientX-r.left)*v.width/r.width,y:(e.clientY-r.top)*v.height/r.height}}function h(i,s=1337){let a=(i+s)|0;a=Math.imul(a^(a>>>16),0x45d9f3b);a=Math.imul(a^(a>>>16),0x45d9f3b);return((a^(a>>>16))>>>0)/4294967295}function draw(now){const t=(now-run.start)/1000,s=Math.min(v.width/cfg.width,v.height/cfg.height),dw=cfg.width*s,dh=cfg.height*s,ox=(v.width-dw)/2,oy=(v.height-dh)/2,cw=dw/cfg.cols,ch=dh/cfg.rows,rad=dw*cfg.radius/100,motion=reduce.matches?'none':cfg.motion;x.clearRect(0,0,v.width,v.height);if(cfg.interaction==='reveal'&&p.active){x.globalAlpha=.18;x.drawImage(img,ox,oy,dw,dh);x.globalAlpha=1}for(let r=0;r<cfg.rows;r++)for(let c=0;c<cfg.cols;c++){const i=r*cfg.cols+c,sx=c*img.width/cfg.cols,sy=r*img.height/cfg.rows,sw=img.width/cfg.cols,sh=img.height/cfg.rows,dx0=ox+c*cw,dy0=oy+r*ch,cx=dx0+cw/2,cy=dy0+ch/2;let dx=0,dy=0,a=1,q=cfg.intensity/100;if(motion==='wave')dy=Math.sin(c*.34+t*4*cfg.speed)*ch*1.8*q;else if(motion==='resolve'){const z=Math.min(1,(t*cfg.speed*.32)%1.25);if(h(i)>z){a=.08;dx=(h(i,81)-.5)*cw*5*q;dy=(h(i,19)-.5)*ch*3*q}}else if(motion==='glitch'){if(h(Math.floor(t*10*cfg.speed)+r,77)<q*.28)dx=(h(r+Math.floor(t*20),12)-.5)*cw*14*q;if(h(i+Math.floor(t*7),44)<q*.025)a=.1}if(p.active&&cfg.interaction!=='none'){const vx=cx-p.x,vy=cy-p.y,d=Math.hypot(vx,vy);if(d<rad){const z=1-d/rad;if(cfg.interaction==='repel'){const f=z*z*(cfg.strength/100)*rad*.32;dx+=vx/(d||1)*f;dy+=vy/(d||1)*f}else a=Math.max(a,.2+.8*z)}else if(cfg.interaction==='reveal')continue}x.globalAlpha=a;x.drawImage(img,sx,sy,sw+.5,sh+.5,dx0+dx,dy0+dy,cw+.5,ch+.5)}x.globalAlpha=1}function loop(now){run.raf=0;if(!active())return;draw(now);if((!reduce.matches&&cfg.motion!=='none')||(p.active&&cfg.interaction!=='none'))run.raf=requestAnimationFrame(loop)}if(!x){document.body.innerHTML='<p>This browser cannot display the interactive artwork.</p>'}else{img.onload=()=>{fit();wake()};img.src=${JSON.stringify(png)};['pointerenter','pointermove','pointerdown'].forEach(n=>v.addEventListener(n,e=>{Object.assign(p,pos(e),{active:true});wake()}));v.addEventListener('pointerleave',()=>{p.active=false;wake()});new ResizeObserver(()=>{fit();wake()}).observe(v);new IntersectionObserver(([e])=>{run.visible=e.isIntersecting;if(run.visible)wake();else if(run.raf){cancelAnimationFrame(run.raf);run.raf=0}}).observe(v);document.addEventListener('visibilitychange',wake);reduce.addEventListener&&reduce.addEventListener('change',wake)}<\/script></body></html>`;
+    }
+
+    function legacyStandaloneHtml(){
+      const png=sourceCanvas().toDataURL('image/png'),g=state.engine._grid;
       const cfg={cols:g.cols,rows:g.rows,motion:value('motion'),interaction:value('interaction'),speed:number('speed'),intensity:number('intensity'),radius:number('radius'),strength:number('strength')};
       return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Interactive ASCII</title><style>html,body{margin:0;height:100%;background:#050505;overflow:hidden}canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none}</style><canvas id="v"></canvas><script>const cfg=${JSON.stringify(cfg)},img=new Image(),v=document.getElementById('v'),x=v.getContext('2d'),p={active:false,x:0,y:0};img.onload=()=>{v.width=img.width;v.height=img.height;requestAnimationFrame(loop)};img.src=${JSON.stringify(png)};const h=(i,s=1337)=>{let a=(i+s)|0;a=Math.imul(a^(a>>>16),0x45d9f3b);a=Math.imul(a^(a>>>16),0x45d9f3b);return((a^(a>>>16))>>>0)/4294967295};function pos(e){const r=v.getBoundingClientRect();return{x:(e.clientX-r.left)*v.width/r.width,y:(e.clientY-r.top)*v.height/r.height}}v.onpointermove=e=>Object.assign(p,pos(e),{active:true});v.onpointerleave=()=>p.active=false;v.onpointerdown=e=>Object.assign(p,pos(e),{active:true});let start=performance.now();function loop(now){requestAnimationFrame(loop);const t=(now-start)/1000,cw=img.width/cfg.cols,ch=img.height/cfg.rows,rad=img.width*cfg.radius/100;x.clearRect(0,0,v.width,v.height);if(cfg.interaction==='reveal'&&p.active){x.globalAlpha=.18;x.drawImage(img,0,0);x.globalAlpha=1}for(let r=0;r<cfg.rows;r++)for(let c=0;c<cfg.cols;c++){const i=r*cfg.cols+c,sx=c*cw,sy=r*ch,cx=sx+cw/2,cy=sy+ch/2;let dx=0,dy=0,a=1,q=cfg.intensity/100;if(cfg.motion==='wave')dy=Math.sin(c*.34+t*4*cfg.speed)*ch*1.8*q;else if(cfg.motion==='resolve'){const z=Math.min(1,(t*cfg.speed*.32)%1.25);if(h(i)>z){a=.08;dx=(h(i,81)-.5)*cw*5*q;dy=(h(i,19)-.5)*ch*3*q}}else if(cfg.motion==='glitch'){if(h(Math.floor(t*10*cfg.speed)+r,77)<q*.28)dx=(h(r+Math.floor(t*20),12)-.5)*cw*14*q;if(h(i+Math.floor(t*7),44)<q*.025)a=.1}if(p.active&&cfg.interaction!=='none'){const vx=cx-p.x,vy=cy-p.y,d=Math.hypot(vx,vy);if(d<rad){const z=1-d/rad;if(cfg.interaction==='repel'){const f=z*z*(cfg.strength/100)*rad*.32;dx+=vx/(d||1)*f;dy+=vy/(d||1)*f}else a=Math.max(a,.2+.8*z)}else if(cfg.interaction==='reveal')continue}x.globalAlpha=a;x.drawImage(img,sx,sy,cw+.5,ch+.5,sx+dx,sy+dy,cw+.5,ch+.5)}x.globalAlpha=1}<\/script>`;
     }
-    $('html').addEventListener('click',()=>download('interactive-ascii.html',new Blob([standaloneHtml()],{type:'text/html'})));
+    $('html').addEventListener('click',()=>{try{$('exportHint').textContent='Preparing Interactive HTML…';const blob=new Blob([standaloneHtml()],{type:'text/html;charset=utf-8'});download('interactive-ascii.html',blob);$('exportHint').textContent='Interactive HTML download started.';}catch(err){$('exportHint').textContent='Interactive HTML could not be prepared. Please try again.';console.error(err);}});
+
+    function embedCode(){
+      const sc=sourceCanvas(),escaped=standaloneHtml().replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      return `<iframe title="Interactive ASCII artwork" loading="lazy" sandbox="allow-scripts" style="display:block;width:100%;max-width:${sc.width}px;aspect-ratio:${sc.width}/${sc.height};border:0" srcdoc="${escaped}"></iframe>`;
+    }
+    async function copyText(text){
+      if(navigator.clipboard&&isSecureContext)return navigator.clipboard.writeText(text);
+      const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();const copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('Copy unavailable');
+    }
+    $('embed').addEventListener('click',async()=>{try{await copyText(embedCode());$('exportHint').textContent='Embed code copied. Paste it into any HTML block.';$('embed').textContent='Copied';setTimeout(()=>$('embed').textContent='Copy embed code',1600);}catch(_){$('exportHint').textContent='Copy was blocked. Download the HTML file and embed it with an iframe.';}});
 
     addEventListener('beforeunload',()=>{cancelAnimationFrame(state.raf);if(state.engine)state.engine.destroy();if(state.url)URL.revokeObjectURL(state.url);});
   })();
