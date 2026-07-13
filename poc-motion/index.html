@@ -19,26 +19,28 @@
     .top .spacer { flex:1; }
     .sr-only { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
     .layout { display:grid; grid-template-columns:minmax(0,1fr) 360px; height:calc(100dvh - 58px); min-height:0; }
-    .stage { min-width:0; min-height:0; height:100%; padding:18px 22px; overflow:hidden; display:flex; flex-direction:column; }
+    .stage { min-width:0; min-height:0; height:100%; padding:16px 18px; overflow:hidden; display:flex; flex-direction:column; background-color:var(--panel); background-image:radial-gradient(circle,color-mix(in srgb,var(--line) 14%,transparent) .9px,transparent 1px); background-size:16px 16px; }
     .preset-shelf { flex:0 0 auto; display:grid; grid-template-columns:148px minmax(0,1fr); gap:12px; margin:0 0 14px; }
     .preset-gallery { display:grid; grid-auto-flow:column; grid-auto-columns:140px; gap:10px; min-width:0; overflow-x:auto; overscroll-behavior-inline:contain; padding:0 4px 5px 0; }
-    .preset-tile { min-height:92px; overflow:hidden; padding:0; text-align:left; background:var(--panel); }
-    .preset-tile .mini { display:flex; align-items:center; justify-content:center; height:58px; overflow:hidden; padding:5px; border-bottom:2px solid var(--line); background:var(--panel); color:var(--muted); font:800 9px/1.1 "IBM Plex Mono",SFMono-Regular,Menlo,monospace; }
+    .preset-tile { min-height:92px; overflow:hidden; padding:0; border:1px solid var(--divider); text-align:left; background:var(--panel); }
+    .preset-tile .mini { display:flex; align-items:center; justify-content:center; height:58px; overflow:hidden; padding:5px; border-bottom:1px solid var(--divider); background:var(--panel); color:var(--muted); font:800 9px/1.1 "IBM Plex Mono",SFMono-Regular,Menlo,monospace; }
     .preset-tile .mini > div { width:100%; overflow:hidden; }
     .preset-tile .mini canvas { display:block; width:100%; height:100%; object-fit:contain; }
     .preset-tile .mini img { display:block; width:100%; height:100%; object-fit:cover; }
     .preset-tile .name { display:block; padding:7px 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:9px; }
-    .preset-tile.active { background:var(--yellow); color:#1a1a1a; box-shadow:3px 3px 0 var(--line); }
+    .preset-tile.active { border:2px solid var(--blue); background:var(--panel); color:var(--ink); box-shadow:none; }
+    .preset-tile.active .mini { border-bottom-color:var(--blue); }
+    .preset-tile.active .name { padding:6px 7px; background:var(--yellow); color:#1a1a1a; }
     .source-tile .mini img { display:none; }
     .source-tile.has-image .mini img { display:block; }
     .source-tile.has-image .placeholder { display:none; }
-    .frame { position:relative; flex:1 1 auto; width:auto; height:auto; min-height:0; margin:0 5px 5px 0; border:3px solid var(--line); border-radius:4px; background:var(--stage); box-shadow:5px 5px 0 var(--line); overflow:hidden; touch-action:none; }
+    .frame { position:relative; flex:1 1 auto; width:auto; height:auto; min-height:0; margin:0; border:0; border-radius:4px; background-color:var(--stage); background-image:radial-gradient(circle,color-mix(in srgb,var(--line) 14%,transparent) .9px,transparent 1px); background-size:16px 16px; box-shadow:none; overflow:hidden; touch-action:none; }
     .camera { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); transform-origin:center; will-change:transform; }
     #view { display:block; width:auto; height:auto; max-width:none; max-height:none; touch-action:none; cursor:crosshair; }
     #maskOverlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; touch-action:none; }
     #maskOverlay.drawing { pointer-events:auto; cursor:crosshair; }
     #source { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
-    .empty { position:absolute; left:50%; top:50%; display:grid; place-items:center; gap:12px; width:min(560px,calc(100% - 64px)); min-height:280px; padding:28px 20px; transform:translate(-50%,-50%); border:2px dashed var(--line); background:var(--panel); color:var(--ink); text-align:center; cursor:pointer; }
+    .empty { position:absolute; left:50%; top:50%; display:grid; place-items:center; gap:12px; width:calc(100% - 32px); min-height:280px; padding:28px 20px; transform:translate(-50%,-50%); border:2px dashed var(--line); background:transparent; color:var(--ink); text-align:center; cursor:pointer; }
     .empty::before { content:'UPLOAD'; display:grid; place-items:center; width:60px; height:60px; border:2px solid var(--line); border-radius:4px; background:var(--line); color:var(--panel); font:800 10px/1 "IBM Plex Mono",SFMono-Regular,Menlo,monospace; }
     .empty strong { max-width:420px; font-size:24px; font-weight:900; line-height:1.05; letter-spacing:-.02em; text-transform:uppercase; }
     .empty small { color:var(--muted); font:700 10px/1.3 "IBM Plex Mono",SFMono-Regular,Menlo,monospace; letter-spacing:.06em; text-transform:uppercase; }
@@ -99,7 +101,7 @@
       .side { height:auto; border-left:0; border-top:8px solid var(--line); overflow:visible; }
       .stage { height:72dvh; min-height:500px; padding:12px; }
       .preset-shelf { grid-template-columns:118px minmax(0,1fr); gap:8px; margin-bottom:10px; }
-      .preset-gallery { grid-auto-columns:118px; }
+      .preset-gallery { grid-auto-columns:118px; gap:8px; }
       .empty { width:calc(100% - 32px); min-height:230px; }
       .empty strong { font-size:20px; }
     }
